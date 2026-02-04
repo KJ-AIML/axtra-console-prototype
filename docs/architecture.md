@@ -1,236 +1,341 @@
 # Axtra Console - Architecture Overview
 
-## How It Works
+## System Architecture
 
-### Tech Stack
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Browser (Client)                        │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  React 19 Components (UI Layer)                     │   │
-│  │  - Sidebar, Header, Dashboard, Pages               │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-│                     │                                       │
-│  ┌──────────────────▼──────────────────────────────────┐   │
-│  │  React Router DOM v7 (Routing)                     │   │
-│  │  - Client-side routing, URL sync                   │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-│                     │                                       │
-│  ┌──────────────────▼──────────────────────────────────┐   │
-│  │  Zustand v5 (State Management)                      │   │
-│  │  - Navigation, Sidebar, User, Dashboard state      │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-│                     │                                       │
-│  ┌──────────────────▼──────────────────────────────────┐   │
-│  │  API Client (HTTP Layer)                            │   │
-│  │  - Auth, interceptors, error handling               │   │
-│  └──────────────────┬──────────────────────────────────┘   │
-└─────────────────────┼───────────────────────────────────────┘
-                      │
-                      ▼
-              ┌───────────────┐
-              │ Backend API   │
-              │ (Future)      │
-              └───────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Browser (Client)                             │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  React 19 Components                                         │   │
+│  │  - Sidebar, Header, Dashboard, Pages                        │   │
+│  │  - Simulations, ActiveCall, Login                           │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         │                                           │
+│  ┌──────────────────────▼──────────────────────────────────────┐   │
+│  │  React Router DOM v7 (Routing)                              │   │
+│  │  - Protected routes, Auth guards                            │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         │                                           │
+│  ┌──────────────────────▼──────────────────────────────────────┐   │
+│  │  Zustand v5 (State Management)                              │   │
+│  │  - useUserStore (auth)                                      │   │
+│  │  - useSimulationStore (training)                            │   │
+│  │  - useDashboardDataStore (KPIs)                             │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         │                                           │
+│  ┌──────────────────────▼──────────────────────────────────────┐   │
+│  │  API Client                                                  │   │
+│  │  - Auth tokens, interceptors, error handling                │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+└─────────────────────────┼───────────────────────────────────────────┘
+                          │
+                          ▼ HTTP Requests
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Backend API (Node.js)                           │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  HTTP Server (port 3001)                                     │   │
+│  │  - Route matching, CORS, JSON parsing                       │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         │                                           │
+│  ┌──────────────────────▼──────────────────────────────────────┐   │
+│  │  Services                                                    │   │
+│  │  - auth.ts (login, register, sessions)                      │   │
+│  │  - dashboard.ts (metrics, progress)                         │   │
+│  │  - simulations.ts (scenarios, progress)                     │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         │                                           │
+│  ┌──────────────────────▼──────────────────────────────────────┐   │
+│  │  Database (Turso/libsql)                                     │   │
+│  │  - SQLite over HTTP, serverless                             │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Application Flow
+---
 
-1. **Initialization** (`main.tsx`)
-   - Import global styles (`index.css` with Tailwind)
-   - Mount React app to `<div id="root">`
+## Application Flow
 
-2. **App Setup** (`App.tsx`)
-   - `<ErrorBoundary>` wraps entire app for error handling
-   - `<BrowserRouter>` enables client-side routing
-   - `useLocation` + `useEffect` syncs URL with Zustand navigation state
+### 1. App Initialization
 
-3. **Layout Rendering**
-   ```
-   AppContent
-   ├── Sidebar (uses navigationStore, sidebarStore)
-   ├── Header (uses userStore)
-   └── Main Content Area
-       └── <Routes>
-           └── Each Route renders a Page Component
-   ```
+```
+main.tsx
+    ↓
+Load index.css (Tailwind v4)
+    ↓
+Mount React to #root
+    ↓
+App.tsx
+    ↓
+ErrorBoundary (error handling)
+    ↓
+BrowserRouter (routing)
+    ↓
+AppContent
+```
 
-4. **State Updates**
-   - User interacts → Component calls Zustand store action
-   - Zustand updates state → All subscribed components re-render
-   - No props drilling needed!
+### 2. Auth Flow
 
-### Key Architectural Decisions
+```
+User visits /login
+    ↓
+PublicRoute checks auth
+    ↓
+Not authenticated → Show Login
+    ↓
+User submits credentials
+    ↓
+POST /api/auth/login
+    ↓
+Server validates, creates session
+    ↓
+Returns JWT token
+    ↓
+useUserStore saves token
+    ↓
+Redirect to Dashboard
+```
 
-| Decision | Why |
-|----------|-----|
-| **Zustand over Redux/Context** | Simpler API, no providers, built-in TypeScript support |
-| **React Router v7** | Latest features, excellent TypeScript support |
-| **Tailwind v4** | Modern CSS pipeline, smaller bundles, PostCSS integration |
-| **Vitest over Jest** | Faster, native ESM support, better Vite integration |
-| **Error Boundary** | Graceful error handling, better UX than white screens |
+### 3. Dashboard Data Flow
+
+```
+Dashboard mounts
+    ↓
+useDashboardDataStore.fetchDashboardData()
+    ↓
+GET /api/dashboard
+    ↓
+Server validates JWT
+    ↓
+Query database (user_metrics, scenarios, etc.)
+    ↓
+Return JSON response
+    ↓
+Store updates state
+    ↓
+Components re-render with data
+```
+
+### 4. Simulation Flow
+
+```
+User clicks "Start Practice"
+    ↓
+useSimulationStore.startSimulation(id)
+    ↓
+POST /api/scenarios/:id/start
+    ↓
+Database: Update user_scenarios status
+    ↓
+Navigate to /simulations/:id
+    ↓
+ActiveSimulation component mounts
+    ↓
+Fetch scenario details from API
+    ↓
+Render 3-panel call interface
+```
 
 ---
 
 ## Directory Structure
 
 ```
-src/
-├── components/          # Reusable UI components
-│   ├── Sidebar.tsx      # Navigation sidebar
-│   ├── Header.tsx       # Top bar with breadcrumbs, user menu
-│   ├── Dashboard.tsx    # Main dashboard with KPIs
-│   ├── ErrorBoundary.tsx # Error catching wrapper
-│   └── ErrorFallback.tsx # Error UI display
+axtra-console-prototype/
+├── src/                          # Frontend
+│   ├── components/               # Reusable UI
+│   │   ├── Sidebar.tsx           # Navigation
+│   │   ├── Header.tsx            # Top bar
+│   │   ├── Dashboard.tsx         # KPI dashboard
+│   │   └── ErrorBoundary.tsx     # Error handling
+│   │
+│   ├── pages/                    # Route pages
+│   │   ├── Login.tsx             # Auth page
+│   │   ├── Dashboard.tsx         # Home page
+│   │   ├── Simulations.tsx       # Training list
+│   │   ├── ActiveSimulation.tsx  # Call interface
+│   │   └── ...
+│   │
+│   ├── stores/                   # Zustand stores
+│   │   ├── useUserStore.ts       # Auth state
+│   │   ├── useSimulationStore.ts # Training state
+│   │   ├── useDashboardDataStore.ts
+│   │   └── ...
+│   │
+│   ├── lib/                      # Utilities
+│   │   ├── api-client.ts         # HTTP client
+│   │   └── api-types.ts          # TypeScript types
+│   │
+│   └── App.tsx                   # Main app
 │
-├── pages/              # Route page components
-│   ├── Scenarios.tsx   # /scenarios
-│   ├── Personas.tsx    # /personas
-│   ├── Simulations.tsx # /simulations
-│   ├── Copilot.tsx     # /copilot
-│   ├── ActiveCalls.tsx # /active-calls
-│   ├── Recordings.tsx  # /recordings
-│   ├── QAScoring.tsx   # /qa-scoring
-│   ├── Insights.tsx    # /insights
-│   ├── KnowledgeBase.tsx # /knowledge-base
-│   ├── Offers.tsx      # /offers
-│   ├── Settings.tsx    # /settings
-│   ├── DeveloperAPI.tsx # /developer-api
-│   └── index.ts        # Barrel export
+├── server/                       # Backend
+│   ├── index.ts                  # API server
+│   ├── db.ts                     # Database config
+│   ├── auth.ts                   # Auth service
+│   ├── dashboard.ts              # Dashboard service
+│   ├── simulations.ts            # Simulation service
+│   └── seed-demo.ts              # Demo data seeder
 │
-├── stores/             # Zustand state management
-│   ├── useNavigationStore.ts # Active nav, route sync
-│   ├── useSidebarStore.ts    # Collapse state
-│   ├── useUserStore.ts       # User session
-│   ├── useDashboardStore.ts  # Tabs, simulation state
-│   └── index.ts              # Barrel export
-│
-├── lib/                # Utility libraries
-│   ├── api-client.ts   # Centralized HTTP client
-│   ├── api-types.ts    # TypeScript types for API
-│   └── index.ts        # Barrel export
-│
-├── utils/              # Helper functions
-│   └── classnames.ts   # cn() utility for merging classes
-│
-├── test/               # Test configuration
-│   └── setup.ts        # Global test setup (mocks, cleanup)
-│
-├── types/              # Shared TypeScript types
-│   └── index.ts
-│
-├── App.tsx             # Main app with routing
-├── main.tsx            # Entry point
-└── index.css           # Global styles + Tailwind
+└── docs/                         # Documentation
 ```
 
 ---
 
-## Data Flow Examples
+## Database Schema
 
-### Example 1: User Clicks Navigation Item
-```
-User clicks "Scenarios" in Sidebar
-        ↓
-Sidebar: navigate('/scenarios')
-        ↓
-React Router: URL changes to /scenarios
-        ↓
-App.tsx: useEffect detects location change
-        ↓
-useNavigationStore.syncWithPath('/scenarios')
-        ↓
-Zustand updates activeNav to 'scenarios'
-        ↓
-Sidebar re-renders with "Scenarios" highlighted
-        ↓
-<Scenarios /> page component renders
+### Users
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  initials TEXT NOT NULL,
+  role TEXT DEFAULT 'operator',
+  avatar TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-### Example 2: API Request
-```
-Component: apiClient.get('/scenarios')
-        ↓
-api-client: Add auth token (if set)
-        ↓
-api-client: Make fetch request with timeout
-        ↓
-api-client: Parse response, handle errors
-        ↓
-Return typed data to component
+### Sessions
+```sql
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token TEXT UNIQUE NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-### Example 3: Error Boundary
+### Scenarios
+```sql
+CREATE TABLE scenarios (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  difficulty TEXT NOT NULL,
+  duration TEXT NOT NULL,
+  type TEXT NOT NULL,
+  category TEXT,
+  persona TEXT DEFAULT 'Customer',
+  rating REAL DEFAULT 4.5,
+  completions INTEGER DEFAULT 0,
+  is_recommended INTEGER DEFAULT 1
+);
 ```
-Component throws error
-        ↓
-ErrorBoundary.componentDidCatch catches it
-        ↓
-Log error (console in DEV, service in PROD)
-        ↓
-Render <ErrorFallback />
-        ↓
-User sees "Something went wrong" with recovery options
+
+### User Scenarios (Progress)
+```sql
+CREATE TABLE user_scenarios (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  scenario_id TEXT NOT NULL,
+  status TEXT DEFAULT 'not_started',
+  score INTEGER,
+  started_at DATETIME,
+  completed_at DATETIME
+);
 ```
 
 ---
 
-## Component Communication
+## API Architecture
 
-### Before (Props Drilling - Removed)
+### Route Handling
+
+Routes are matched by method + path segments:
+
 ```typescript
-// ❌ Old way - props through 3 levels
-<App>
-  <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} />
-  <Dashboard activeTab={activeTab} setActiveTab={setActiveTab} />
-</App>
+// Example: GET /api/scenarios/:id
+segments = ['scenarios', 'a7dda3d3-...']
+method = 'GET'
+
+// Match condition:
+method === 'GET' && 
+segments.length === 2 && 
+segments[0] === 'scenarios'
 ```
 
-### After (Zustand - Current)
-```typescript
-// ✅ New way - direct store access
-export const Sidebar = () => {
-  const activeNav = useNavigationStore(s => s.activeNav);
-  const setActiveNav = useNavigationStore(s => s.setActiveNav);
-  // No props needed!
-};
+### Authentication Middleware
 
-export const Dashboard = () => {
-  const activeTab = useDashboardStore(s => s.activeTab);
-  const setActiveTab = useDashboardStore(s => s.setActiveTab);
-  // Independent state management!
-};
+```typescript
+const token = getToken(req);  // From Authorization header
+const user = await validateSession(token);
+
+if (!user) {
+  return 401 Unauthorized;
+}
+// Continue to route handler...
+```
+
+### Error Handling
+
+```
+API Error → ApiError class → JSON response
+    ↓
+Client receives { error: "message" }
+    ↓
+Store catches error, updates error state
+    ↓
+UI displays error message
+```
+
+---
+
+## State Management
+
+### Zustand Pattern
+
+```typescript
+// Store definition
+export const useUserStore = create<UserState>((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  
+  login: async (email, password) => {
+    const response = await apiClient.post('/auth/login', { email, password });
+    set({ user: response.data.user, isAuthenticated: true });
+  },
+  
+  logout: async () => {
+    await apiClient.post('/auth/logout');
+    set({ user: null, isAuthenticated: false });
+  }
+}));
+
+// Component usage
+const user = useUserStore(state => state.user);
 ```
 
 ---
 
 ## Routing Table
 
-| Path | Component | Store Used |
-|------|-----------|------------|
-| `/` | Dashboard | useDashboardStore |
-| `/scenarios` | Scenarios | - |
-| `/personas` | Personas | - |
-| `/simulations` | Simulations | - |
-| `/copilot` | Copilot | - |
-| `/active-calls` | ActiveCalls | - |
-| `/recordings` | Recordings | - |
-| `/qa-scoring` | QAScoring | - |
-| `/insights` | Insights | - |
-| `/knowledge-base` | KnowledgeBase | - |
-| `/offers` | Offers | - |
-| `/settings` | Settings | - |
-| `/developer-api` | DeveloperAPI | - |
-| `*` | Dashboard (fallback) | - |
+| Path | Component | Auth Required |
+|------|-----------|---------------|
+| `/login` | Login | No |
+| `/` | Dashboard | Yes |
+| `/scenarios` | Scenarios | Yes |
+| `/simulations/:id` | ActiveSimulation | Yes |
+| `/personas` | Personas | Yes |
+| `/copilot` | Copilot | Yes |
+| `/active-calls` | ActiveCalls | Yes |
+| `/recordings` | Recordings | Yes |
+| `/qa-scoring` | QAScoring | Yes |
+| `/insights` | Insights | Yes |
+| `/knowledge-base` | KnowledgeBase | Yes |
+| `/offers` | Offers | Yes |
+| `/settings` | Settings | Yes |
+| `/developer-api` | DeveloperAPI | Yes |
 
 ---
 
 ## Build Pipeline
 
 ```
-Source Files (TSX/TS/CSS)
+Source (TSX/TS/CSS)
         ↓
-    Vite Build
+    Vite Dev Server
         ↓
 ┌───────────────────────┐
 │  PostCSS Pipeline     │
@@ -240,27 +345,37 @@ Source Files (TSX/TS/CSS)
         ↓
 ┌───────────────────────┐
 │  Tailwind CSS v4      │
-│  - Scan for classes   │
-│  - Generate utilities │
-│  - Minify             │
+│  - Utility generation │
+│  - Just-in-time       │
 └───────────────────────┘
         ↓
 ┌───────────────────────┐
-│  TypeScript Compiler  │
+│  TypeScript + SWC     │
 │  - Type checking      │
-│  - JSX transform      │
+│  - Fast compilation   │
 └───────────────────────┘
         ↓
-┌───────────────────────┐
-│  Rollup Bundler       │
-│  - Tree shaking       │
-│  - Code splitting     │
-│  - Minification       │
-└───────────────────────┘
-        ↓
-    dist/ folder
-├── index.html
-├── assets/
-│   ├── index-xxxx.js (300KB → 91KB gzipped)
-│   └── index-xxxx.css (25KB → 5.6KB gzipped)
+    HMR Update
 ```
+
+---
+
+## Key Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Turso over PostgreSQL** | Serverless, edge-deployed, SQLite compatible |
+| **Custom HTTP server** | Lightweight, no Express bloat, full control |
+| **Zustand over Redux** | Simpler API, no providers, TypeScript native |
+| **Vite over CRA** | Faster HMR, modern ESM, better DX |
+| **Vitest over Jest** | Native ESM, Vite integration, faster |
+
+---
+
+## Security
+
+- **Password hashing**: bcrypt with salt rounds 10
+- **Session tokens**: UUID-based with 7-day expiry
+- **JWT storage**: localStorage (consider httpOnly cookies for prod)
+- **CORS**: Configured for development
+- **SQL injection**: Parameterized queries via libsql client

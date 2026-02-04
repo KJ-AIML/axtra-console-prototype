@@ -5,6 +5,7 @@ export { default as Dashboard } from './Dashboard';
 export { default as Scenarios } from './Scenarios';
 export { default as Personas } from './Personas';
 export { default as Simulations } from './Simulations';
+export { default as ActiveSimulation } from './ActiveSimulation';
 export { default as Copilot } from './Copilot';
 export { default as ActiveCalls } from './ActiveCalls';
 export { default as Recordings } from './Recordings';

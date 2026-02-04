@@ -13,7 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
-import { useDashboardStore, useDashboardDataStore, useUserStore } from '../stores';
+import { useDashboardStore, useDashboardDataStore, useUserStore, useSimulationStore } from '../stores';
 
 // Static tabs
 const TABS = ['Overview', 'My Training', 'Team Performance', 'Live Assist', 'QA Archive', 'Compliance'] as const;
@@ -145,17 +145,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   
   const { 
     metrics, 
-    scenarios, 
     skillVelocity, 
     qaHighlights, 
     isLoading, 
     fetchDashboardData 
   } = useDashboardDataStore();
 
+  const {
+    recommendedScenarios,
+    fetchRecommendedScenarios,
+  } = useSimulationStore();
+
   // Fetch dashboard data on mount
   useEffect(() => {
     fetchDashboardData();
-  }, [fetchDashboardData]);
+    fetchRecommendedScenarios();
+  }, [fetchDashboardData, fetchRecommendedScenarios]);
 
   // Format metric label for display
   const formatMetricLabel = (key: string): string => {
@@ -257,8 +262,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">View Scenario Library</button>
           </div>
           <div className="space-y-3">
-            {scenarios.length > 0 ? (
-              scenarios.map((scenario) => (
+            {recommendedScenarios.length > 0 ? (
+              recommendedScenarios.slice(0, 4).map((scenario) => (
                 <ScenarioItem 
                   key={scenario.id}
                   title={scenario.title}

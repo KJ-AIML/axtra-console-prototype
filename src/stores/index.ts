@@ -3,6 +3,7 @@ export { useSidebarStore } from './useSidebarStore';
 export { useUserStore } from './useUserStore';
 export { useDashboardStore, type DashboardTab } from './useDashboardStore';
 export { useDashboardDataStore } from './useDashboardDataStore';
+export { useSimulationStore } from './useSimulationStore';
 export type {
   UserMetric,
   Scenario as DashboardScenario,
@@ -10,3 +11,7 @@ export type {
   QaHighlight,
   DashboardData,
 } from './useDashboardDataStore';
+export type {
+  Scenario as SimulationScenario,
+  SimulationStats,
+} from './useSimulationStore';

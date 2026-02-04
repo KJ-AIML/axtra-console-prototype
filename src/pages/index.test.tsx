@@ -53,6 +53,17 @@ vi.mock('../stores', () => {
     fetchDashboardData: vi.fn(),
   };
 
+  // Mock simulation state
+  const simulationState = {
+    recommendedScenarios: [
+      { id: '1', title: 'Billing Dispute - Aggressive Persona', difficulty: 'Hard', duration: '8-12 mins', type: 'Voice Simulation' },
+      { id: '2', title: 'Technical Support - Broadband Connectivity', difficulty: 'Medium', duration: '15 mins', type: 'Knowledge Check' },
+      { id: '3', title: 'New Promotion - Upsell Opportunity', difficulty: 'Easy', duration: '5 mins', type: 'Objection Handling' },
+      { id: '4', title: 'Privacy & Data Protection Verification', difficulty: 'Hard', duration: '10 mins', type: 'Compliance Training' },
+    ],
+    fetchRecommendedScenarios: vi.fn(),
+  };
+
   return {
     useDashboardStore: ((selector?: any) => {
       return selector ? selector(dashboardState) : dashboardState;
@@ -62,6 +73,9 @@ vi.mock('../stores', () => {
     }) as any,
     useDashboardDataStore: ((selector?: any) => {
       return selector ? selector(dashboardDataState) : dashboardDataState;
+    }) as any,
+    useSimulationStore: ((selector?: any) => {
+      return selector ? selector(simulationState) : simulationState;
     }) as any,
   };
 });

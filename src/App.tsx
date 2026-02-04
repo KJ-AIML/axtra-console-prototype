@@ -10,6 +10,7 @@ import {
   Scenarios,
   Personas,
   Simulations,
+  ActiveSimulation,
   Copilot,
   ActiveCalls,
   Recordings,
@@ -142,8 +143,18 @@ const AppContent: React.FC<AppProps> = (props) => {
           </PublicRoute>
         } 
       />
+
+      {/* Protected Routes - Full Screen (no layout) */}
+      <Route 
+        path="/simulations/:scenarioId" 
+        element={
+          <ProtectedRoute>
+            <ActiveSimulation />
+          </ProtectedRoute>
+        } 
+      />
       
-      {/* Protected Routes */}
+      {/* Protected Routes - With Layout */}
       <Route 
         path="/*" 
         element={

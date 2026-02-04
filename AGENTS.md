@@ -1,54 +1,36 @@
 # Axtra Console - Agent Guide
 
-This document provides essential information for AI coding agents working on the Axtra Console project.
+Essential information for AI coding agents working on the Axtra Console project.
 
 ---
 
-## Project Overview
+## Quick Reference
 
-**Axtra Console** is an AI-powered call center coaching and real-time assist platform. It provides call center operators with a modern dashboard to view performance metrics, practice scenarios with AI coaching, monitor active calls, review QA scores, and access knowledge base resources.
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Start Vite + API server |
+| `npm test -- --run` | Run all tests |
+| `npm run build` | Production build |
+
+**Key Files:**
+- `src/App.tsx` - Main app with routing
+- `server/index.ts` - API server
+- `server/db.ts` - Database config
+- `.env.local` - Environment variables
 
 ---
 
 ## Technology Stack
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| React | 19.2.4 | UI framework |
-| React DOM | 19.2.4 | DOM rendering |
-| React Router DOM | 7.13.0 | Client-side routing |
-| TypeScript | 5.8.2 | Type safety |
-| Vite | 6.2.0 | Build tool and dev server |
-| Tailwind CSS | 4.1.18 | Utility-first styling |
-| Zustand | 5.0.11 | State management |
-| Vitest | 4.0.18 | Testing framework |
-| Lucide React | 0.563.0 | Icon library |
-| @libsql/client | ^0.14.0 | Turso database client |
-| bcryptjs | ^2.4.3 | Password hashing |
-
----
-
-## Build and Test Commands
-
-### Development
-```bash
-npm install          # Install dependencies
-npm run dev          # Start Vite dev server on port 3000
-```
-
-### Build
-```bash
-npm run build        # Build for production (outputs to dist/)
-npm run preview      # Preview production build locally
-```
-
-### Testing
-```bash
-npm test             # Run all tests in watch mode
-npm test -- --run    # Run tests once (CI mode)
-npm run test:ui      # Run tests with UI
-npm run test:coverage # Run tests with coverage report
-```
+| Category | Technology |
+|----------|------------|
+| **Frontend** | React 19, TypeScript 5.8, Vite 6 |
+| **Styling** | Tailwind CSS v4 |
+| **Routing** | React Router DOM v7 |
+| **State** | Zustand v5 |
+| **Backend** | Node.js HTTP server |
+| **Database** | Turso (libsql) |
+| **Testing** | Vitest |
 
 ---
 
@@ -56,534 +38,230 @@ npm run test:coverage # Run tests with coverage report
 
 ```
 axtra-console-prototype/
-├── src/                     # Frontend source code
-│   ├── components/          # Reusable UI components
-│   │   ├── Sidebar.tsx          # Navigation sidebar with workspace switcher
-│   │   ├── Header.tsx           # Top bar with breadcrumbs and user menu
-│   │   ├── Dashboard.tsx        # Main dashboard with KPI metrics
-│   │   ├── ErrorBoundary.tsx    # Error catching wrapper
-│   │   └── ErrorFallback.tsx    # Error UI display
-│   ├── pages/               # Page components for routes
-│   │   ├── Login.tsx            # Authentication page (login/register)
-│   │   ├── Scenarios.tsx
-│   │   ├── Personas.tsx
-│   │   ├── Simulations.tsx
-│   │   ├── Copilot.tsx
-│   │   ├── ActiveCalls.tsx
-│   │   ├── Recordings.tsx
-│   │   ├── QAScoring.tsx
-│   │   ├── Insights.tsx
-│   │   ├── KnowledgeBase.tsx
-│   │   ├── Offers.tsx
-│   │   ├── Settings.tsx
-│   │   ├── DeveloperAPI.tsx
-│   │   ├── Dashboard.tsx
-│   │   └── index.ts             # Barrel export
-│   ├── stores/              # Zustand state management
-│   │   ├── useNavigationStore.ts   # Active nav, route sync, ROUTE_PATHS
-│   │   ├── useSidebarStore.ts      # Sidebar collapse state
-│   │   ├── useUserStore.ts         # User auth state, login/logout
-│   │   ├── useDashboardStore.ts    # Dashboard tabs, simulation state
-│   │   └── index.ts                # Barrel export
-│   ├── lib/                 # Utility libraries
-│   │   ├── api-client.ts       # Centralized HTTP client
-│   │   ├── api-types.ts        # TypeScript types for API
-│   │   └── index.ts            # Barrel export
-│   ├── utils/               # Helper functions
-│   │   └── classnames.ts       # cn() utility for merging classes
-│   ├── types/               # TypeScript type definitions
-│   │   └── index.ts
-│   ├── test/                # Test configuration
-│   │   └── setup.ts            # Global test setup, mocks
-│   ├── App.tsx              # Main app component with auth routing
-│   ├── main.tsx             # Application entry point
-│   └── index.css            # Global styles with Tailwind v4
-├── server/                  # Backend API server
-│   ├── index.ts             # API server entry point
-│   ├── db.ts                # Turso/libsql database configuration
-│   ├── auth.ts              # Authentication service
-│   └── README.md            # Server documentation
-├── docs/                    # Documentation files
-│   ├── architecture.md
-│   ├── contributing.md
-│   ├── design_system.md
-│   ├── index.md
-│   └── style-guide.md
-├── index.html               # HTML template (root level, Vite 6 convention)
-├── tailwind.config.js       # Tailwind CSS configuration
-├── postcss.config.js        # PostCSS configuration
-├── vite.config.ts           # Vite build configuration
-├── vitest.config.ts         # Vitest configuration
-├── tsconfig.json            # TypeScript compiler configuration
-└── package.json             # Dependencies and scripts
+├── src/                      # Frontend
+│   ├── components/           # UI components
+│   ├── pages/                # Route pages
+│   ├── stores/               # Zustand stores
+│   │   ├── useUserStore.ts       # Auth state
+│   │   ├── useSimulationStore.ts
+│   │   └── useDashboardDataStore.ts
+│   ├── lib/                  # API client
+│   └── App.tsx               # Main app
+├── server/                   # Backend
+│   ├── index.ts              # API server
+│   ├── db.ts                 # Database
+│   ├── auth.ts               # Auth service
+│   ├── dashboard.ts          # Dashboard data
+│   └── simulations.ts        # Simulation service
+└── docs/                     # Documentation
 ```
 
 ---
 
-## Entry Points
+## Database (Turso/libsql)
 
-| File | Purpose |
-|------|---------|
-| `index.html` | HTML template (root level, Vite 6 convention) |
-| `src/main.tsx` | Application entry point, imports CSS and mounts React root |
-| `src/index.css` | Global styles with Tailwind v4 `@import "tailwindcss"` |
-| `src/App.tsx` | Main application component with BrowserRouter and ErrorBoundary |
+**Database URL:** `libsql://axdb-kjctsc.aws-ap-south-1.turso.io`
+
+### Tables
+- `users` - User accounts
+- `sessions` - Auth sessions
+- `accounts` - User account data
+- `scenarios` - Training scenarios
+- `user_scenarios` - User progress tracking
+- `user_metrics` - Dashboard KPIs
+- `skill_velocity` - User skill progress
+- `qa_highlights` - QA feedback
+
+### Key Patterns
+```typescript
+// Query with parameters
+const result = await db.execute({
+  sql: 'SELECT * FROM users WHERE email = ?',
+  args: [email],
+});
+
+// Insert
+await db.execute({
+  sql: 'INSERT INTO scenarios (id, title) VALUES (?, ?)',
+  args: [id, title],
+});
+```
 
 ---
 
-## Code Style Guidelines
+## API Endpoints
 
-### Naming Conventions
+### Auth
+- `POST /api/auth/register` - Register
+- `POST /api/auth/login` - Login
+- `POST /api/auth/logout` - Logout
+- `GET /api/auth/me` - Current user
+
+### Dashboard
+- `GET /api/dashboard` - Full dashboard
+- `GET /api/dashboard/metrics` - KPIs
+- `GET /api/dashboard/scenarios` - Scenarios
+- `GET /api/dashboard/skill-velocity` - Progress
+- `GET /api/dashboard/qa-highlights` - QA data
+
+### Simulations
+- `GET /api/scenarios` - All scenarios
+- `GET /api/scenarios/:id` - Single scenario
+- `POST /api/scenarios/:id/start` - Start
+- `POST /api/scenarios/:id/complete` - Complete
+- `GET /api/simulations/stats` - User stats
+- `GET /api/simulations/recommended` - Recommended
+
+---
+
+## State Management (Zustand)
+
+### Pattern
+```typescript
+import { create } from 'zustand';
+
+interface StoreState {
+  data: DataType[];
+  isLoading: boolean;
+  fetchData: () => Promise<void>;
+}
+
+export const useStore = create<StoreState>((set) => ({
+  data: [],
+  isLoading: false,
+  fetchData: async () => {
+    set({ isLoading: true });
+    const response = await apiClient.get('/endpoint');
+    set({ data: response.data, isLoading: false });
+  },
+}));
+```
+
+### Usage in Components
+```typescript
+const { data, isLoading, fetchData } = useStore();
+```
+
+---
+
+## Coding Conventions
+
+### Naming
 | Type | Convention | Example |
 |------|------------|---------|
-| Components | PascalCase | `Sidebar.tsx`, `Dashboard.tsx` |
-| Functions | camelCase | `fetchScenarios()`, `handleClick()` |
-| Variables | camelCase | `activeTab`, `isLoading` |
-| Booleans | `is` prefix | `isCollapsed`, `isAlpha` |
-| Constants | UPPER_SNAKE_CASE | `ROUTE_PATHS`, `API_CONFIG` |
-| TypeScript types/interfaces | PascalCase | `UserProps`, `ApiResponse` |
-| Component props interfaces | PascalCase with `Props` suffix | `SidebarProps`, `DashboardProps` |
+| Components | PascalCase | `Sidebar.tsx` |
+| Functions | camelCase | `fetchData()` |
+| Stores | camelCase with `use` prefix | `useUserStore` |
+| Types | PascalCase | `UserProps` |
+| Booleans | `is` prefix | `isLoading` |
 
 ### Import Order
-1. React and core library imports
-2. Third-party imports (lucide-react grouped together)
+1. React and core libraries
+2. Third-party (lucide-react grouped)
 3. Zustand stores
 4. Local/relative imports
 
-### Component Pattern
+### Example
 ```typescript
-// Use Zustand stores instead of props drilling
-import { useNavigationStore } from './stores';
+import { useEffect } from 'react';
+import { User, Settings } from 'lucide-react';
+import { useUserStore } from '../stores';
+import { cn } from '../utils/classnames';
+```
 
+---
+
+## Component Pattern
+
+```typescript
 interface Props {
   className?: string;
 }
 
-export const Sidebar: React.FC<Props> = ({ className }) => {
-  const activeNav = useNavigationStore((state) => state.activeNav);
-  const setActiveNav = useNavigationStore((state) => state.setActiveNav);
-
-  return ( <JSX /> );
+export const Component: React.FC<Props> = ({ className }) => {
+  const data = useStore((state) => state.data);
+  
+  return (
+    <div className={cn('base-classes', className)}>
+      {/* JSX */}
+    </div>
+  );
 };
 ```
 
-### Path Aliases
-- `@/*` maps to `./src/*` (configured in both `vite.config.ts` and `tsconfig.json`)
-
 ---
 
-## Testing Instructions
+## Testing
 
-### Test File Location
-Place tests next to the file they test:
-```
-src/
-├── components/
-│   ├── Sidebar.tsx
-│   └── Sidebar.test.tsx
-├── lib/
-│   ├── api-client.ts
-│   └── api-client.test.ts
-```
-
-### Mocking Stores in Tests
+### Mock Pattern
 ```typescript
 vi.mock('../stores', () => ({
-  useNavigationStore: ((selector?: any) => {
-    const state = { activeNav: 'home', setActiveNav: vi.fn() };
+  useStore: ((selector?: any) => {
+    const state = { data: [], fetchData: vi.fn() };
     return selector ? selector(state) : state;
   }) as any,
 }));
 ```
 
-### Test Goals
-- **67 tests** currently passing across 8 test files
-- Aim for 80%+ coverage on critical paths
-- Test user behaviors, not implementation
-- Keep tests fast with mocks for API calls
-
-### Test Setup Configuration
-Located in `src/test/setup.ts`:
-- Configures `@testing-library/jest-dom`
-- Mocks `IntersectionObserver`
-- Mocks `ResizeObserver`
-- Mocks `window.matchMedia`
-- Automatic cleanup after each test
+### Test Location
+Place tests next to source files:
+```
+src/
+├── Component.tsx
+└── Component.test.tsx
+```
 
 ---
 
-## Authentication System
+## Environment Variables
 
-The application includes a complete authentication system with user registration, login, logout, and session management using Turso (libsql) as the database.
-
-### Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Frontend  │────▶│  API Server │────▶│    Turso    │
-│  (React)    │◄────│  (Node.js)  │◄────│  (SQLite)   │
-└─────────────┘     └─────────────┘     └─────────────┘
-```
-
-### Database
-
-- **Provider**: Turso (libsql) - Serverless SQLite
-- **URL**: `libsql://axdb-kjctsc.aws-ap-south-1.turso.io`
-- **Location**: AWS ap-south-1 (Mumbai)
-
-### Setup Turso Auth Token
-
-1. Install Turso CLI: `curl -sSfL https://get.tur.so/install.sh | bash`
-2. Login: `turso auth login`
-3. Create token: `turso db tokens create axdb`
-4. Add to `.env.local`: `TURSO_AUTH_TOKEN=your_token_here`
-
-### Database Schema
-
-**Users Table:**
-```sql
-CREATE TABLE users (
-  id TEXT PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  name TEXT NOT NULL,
-  initials TEXT NOT NULL,
-  role TEXT DEFAULT 'operator',
-  avatar TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**Sessions Table:**
-```sql
-CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  token TEXT UNIQUE NOT NULL,
-  expires_at DATETIME NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-```
-
-**Accounts Table:**
-```sql
-CREATE TABLE accounts (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  account_name TEXT NOT NULL,
-  account_type TEXT DEFAULT 'personal',
-  settings TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-```
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user (creates default account) |
-| POST | `/api/auth/login` | Login with email/password |
-| POST | `/api/auth/logout` | Invalidate session |
-| GET | `/api/auth/me` | Get current user |
-| GET | `/api/accounts` | Get user's accounts |
-| GET | `/api/health` | Health check |
-
-### Auth Flow
-
-1. **Registration**: User submits name/email/password → Server creates user + default account → Returns JWT token
-2. **Login**: User submits email/password → Server validates → Creates session → Returns JWT token
-3. **Authenticated Requests**: Include `Authorization: Bearer <token>` header
-4. **Logout**: Server deletes session, client clears token
-
-### Default Seed User
-
-When database is first initialized:
-- **Email**: `admin@axtra.local`
-- **Password**: `admin123`
-
-### Frontend Auth Store (`useUserStore`)
-
-```typescript
-const { 
-  user,              // Current user data
-  accounts,          // User's accounts
-  activeAccount,     // Currently selected account
-  isAuthenticated,   // Auth status
-  isLoading,         // Loading state
-  error,             // Error message
-  login,             // (email, password) => Promise<void>
-  register,          // (name, email, password) => Promise<void>
-  logout,            // () => Promise<void>
-  fetchCurrentUser,  // () => Promise<void>
-  fetchAccounts,     // () => Promise<void>
-  init,              // () => Promise<void> - call on app start
-} = useUserStore();
-```
-
-### Protected Routes
-
-Routes in `App.tsx` are wrapped with `ProtectedRoute` component which:
-- Checks authentication status
-- Redirects to `/login` if not authenticated
-- Shows loading spinner during auth check
-
-### Environment Variables
-
-```
+Create `.env.local`:
+```bash
 VITE_API_BASE_URL=http://localhost:3001/api
 TURSO_DATABASE_URL=libsql://axdb-kjctsc.aws-ap-south-1.turso.io
 TURSO_AUTH_TOKEN=your_token_here
 API_PORT=3001
 ```
 
----
-
-## State Management (Zustand)
-
-### Store Structure
-| Store | Purpose | Key State |
-|-------|---------|-----------|
-| `useNavigationStore` | Active navigation, route sync | `activeNav`, `setActiveNav`, `syncWithPath` |
-| `useSidebarStore` | Sidebar collapse state | `isCollapsed`, `toggle()`, `collapse()`, `expand()` |
-| `useUserStore` | User session data | User profile, authentication |
-| `useDashboardStore` | Dashboard tabs, simulation state | `activeTab`, `setActiveTab` |
-
-### Route Paths
-Defined in `useNavigationStore.ts`:
-```typescript
-export const ROUTE_PATHS: Record<string, string> = {
-  'home': '/',
-  'scenarios': '/scenarios',
-  'personas': '/personas',
-  'simulations': '/simulations',
-  'copilot': '/copilot',
-  'active-calls': '/active-calls',
-  'recordings': '/recordings',
-  'qa-scoring': '/qa-scoring',
-  'trends': '/insights',
-  'kb': '/knowledge-base',
-  'offers': '/offers',
-  'settings': '/settings',
-  'devs': '/developer-api',
-};
-```
-
-### Best Practices
-- **Select only what you need** - Use selectors for reactivity
-- **Keep stores simple** - One store per domain
-- **No props drilling** - Components access stores directly
+**Never commit `.env.local` to git!**
 
 ---
 
-## API Client
+## Common Tasks
 
-Located in `src/lib/api-client.ts`:
+### Add New API Route
+1. Add route handler in `server/index.ts`
+2. Add service function in appropriate service file
+3. Add store method in `src/stores/`
+4. Use in component
 
-### Features
-- Methods: `get()`, `post()`, `put()`, `patch()`, `delete()`
-- Auth token management (`setAuthToken`, `getAuthToken`)
-- Request/response interceptors
-- Timeout handling (30s default)
-- Custom `ApiError` class with status codes
+### Add New Component
+1. Create file in `src/components/`
+2. Add interface with `className?: string`
+3. Use `cn()` for conditional classes
+4. Add test file
 
-### Configuration
-- Base URL: `import.meta.env.VITE_API_BASE_URL || '/api'`
-- Default timeout: 30000ms
-- Headers: `Content-Type: application/json`
-
-### Type Definitions
-Located in `src/lib/api-types.ts`:
-- `PaginatedResponse<T>`
-- `ApiResponse<T>`
-- `User`, `LoginRequest`, `LoginResponse`
-- `Scenario`, `CreateScenarioRequest`
-- `Simulation`, `CreateSimulationRequest`
-- `DashboardMetrics`, `SkillVelocity`, `QaHighlight`
-- `ActiveCall`, `Insight`, and more
+### Database Migration
+1. Update schema in `server/db.ts`
+2. Add `ALTER TABLE` in seed function for existing DBs
+3. Restart server
 
 ---
 
-## Error Handling
+## Troubleshooting
 
-### Error Boundary
-- `ErrorBoundary` class component wraps the entire app
-- `ErrorFallback` component displays user-friendly error UI
-- Actions: Try Again, Refresh Page, Go Home
-- Error details shown in development mode
-- Console logging in DEV mode
-
----
-
-## Design System
-
-### Core Principles
-- **Clarity over Decoration** - Every border/shadow serves structural purpose
-- **Micro-Feedback** - 200ms ease-in-out transitions for interactive elements
-- **Information Density** - Data-rich KPI grids with 4px/8px grid system
-
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Brand/Action | Indigo 600 | `#4F46E5` |
-| Background | Slate 50 | `#F8FAFC` |
-| Surface | White | `#FFFFFF` |
-| Border | Gray 200 | `#E5E7EB` |
-| Success | Emerald 500 | `#10B981` |
-| Warning | Amber 500 | `#F59E0B` |
-| Error | Rose 500 | `#F43F5E` |
-
-### Typography
-- **Font:** Inter (Google Fonts)
-- **Labels:** `text-[11px] font-semibold text-gray-400 uppercase tracking-tight`
-- **Body:** Medium (500) for UI, Regular (400) for descriptions
-
-### Iconography
-- Use `lucide-react` for all icons
-- 18px in sidebar, 14px/16px in cards
+| Issue | Solution |
+|-------|----------|
+| "Route not found" | Check segment matching in `server/index.ts` |
+| "Database error" | Verify `TURSO_AUTH_TOKEN` in `.env.local` |
+| "Module not found" | Run `npm install` |
+| Tests failing | Check mock setup in test files |
 
 ---
 
-## Configuration Files
+## Links
 
-### Vite Config (`vite.config.ts`)
-- Server: port 3000, host 0.0.0.0
-- React plugin integration
-- Path alias: `@/*` → `./src`
-- Environment variables: `GEMINI_API_KEY`
-
-### Vitest Config (`vitest.config.ts`)
-- Globals enabled
-- Environment: jsdom
-- Setup file: `./src/test/setup.ts`
-- CSS: enabled for Tailwind
-- Coverage: v8 provider
-
-### TypeScript Config (`tsconfig.json`)
-- Target: ES2022
-- JSX: react-jsx transform
-- Path aliases: `@/*` → `./src/*`
-- Module: ESNext
-
-### Tailwind Config (`tailwind.config.js`)
-- Content paths: `./index.html`, `./src/**/*.{js,ts,jsx,tsx}`
-- Extended theme with Inter font family
-
-### PostCSS Config (`postcss.config.js`)
-- Plugins: `@tailwindcss/postcss`, `autoprefixer`
-
----
-
-## Environment Variables
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `VITE_API_BASE_URL` | API base URL | `/api` |
-| `GEMINI_API_KEY` | Google Gemini API key | (optional) |
-
----
-
-## Routing
-
-- React Router DOM v7 with `BrowserRouter`
-- Routes defined in `src/App.tsx`
-- Navigation automatically synced with Zustand store via `useLocation` hook
-- Catch-all route redirects to Dashboard
-
-### Route Table
-| Path | Component |
-|------|-----------|
-| `/` | Dashboard |
-| `/scenarios` | Scenarios |
-| `/personas` | Personas |
-| `/simulations` | Simulations |
-| `/copilot` | Copilot |
-| `/active-calls` | ActiveCalls |
-| `/recordings` | Recordings |
-| `/qa-scoring` | QAScoring |
-| `/insights` | Insights |
-| `/knowledge-base` | KnowledgeBase |
-| `/offers` | Offers |
-| `/settings` | Settings |
-| `/developer-api` | DeveloperAPI |
-| `*` | Dashboard (fallback) |
-
----
-
-## Dependencies
-
-### Production
-- `react@19.2.4` + `react-dom@19.2.4`
-- `react-router-dom@7.13.0`
-- `zustand@5.0.11`
-- `lucide-react@0.563.0`
-- `clsx@2.1.1` + `tailwind-merge@3.4.0`
-- `@libsql/client@^0.14.0` - Turso database client
-- `bcryptjs@^2.4.3` - Password hashing
-
-### Development
-- `vite@6.2.0`
-- `@vitejs/plugin-react@5.1.3`
-- `typescript@5.8.2`
-- `tailwindcss@4.x`
-- `@tailwindcss/postcss`
-- `postcss` + `autoprefixer`
-- `vitest@4.0.18`
-- `@testing-library/react@16.3.2`
-- `@testing-library/jest-dom@6.9.1`
-- `@testing-library/user-event@14.6.1`
-- `jsdom@28.0.0`
-
----
-
-## Documentation References
-
-| Document | Description |
-|----------|-------------|
-| `docs/architecture.md` | Detailed architecture, data flow, component communication |
-| `docs/contributing.md` | Contribution guidelines, commit conventions |
-| `docs/design_system.md` | Design philosophy, visual language |
-| `docs/index.md` | Quick start guide, feature overview |
-| `docs/style-guide.md` | Colors, components, spacing, typography |
-| `CLAUDE.md` | Claude Code specific guidance |
-
----
-
-## Security Considerations
-
-- **Password Hashing**: bcrypt with salt rounds 10
-- **Session Tokens**: UUID-based tokens with 7-day expiration
-- **Token Storage**: JWT tokens stored in localStorage (consider httpOnly cookies for production)
-- **Auth Headers**: Bearer token authentication via `Authorization` header
-- **CORS**: Configured for development (update for production)
-- **SQL Injection**: Parameterized queries via libsql client
-- **Error Handling**: Generic error messages to prevent information leakage
-- **Environment Variables**: Sensitive config (DB tokens, API keys) in `.env.local` (never commit)
-- **Error Boundaries**: Prevent UI crashes from exposing stack traces
-
----
-
-## Performance Notes
-
-- Uses React.memo for component memoization where appropriate
-- Zustand selectors prevent unnecessary re-renders
-- Tailwind v4 provides smaller bundles via PostCSS integration
-- Vite build includes tree shaking and code splitting
-- Static data moved outside components to prevent re-creation
-
----
-
-## Notes for AI Agents
-
-1. **Always use Zustand stores** for state management - don't add new Context providers
-2. **Follow the import order** - React → Third-party → Stores → Local
-3. **Use the `cn()` utility** from `utils/classnames` for conditional classes
-4. **Place tests next to source files** - `Component.tsx` + `Component.test.tsx`
-5. **Mock stores in tests** using the pattern shown in Testing Instructions
-6. **Use Tailwind utility classes** - Avoid custom CSS unless necessary
-7. **Follow the design system** - Colors, typography, spacing from `docs/design_system.md`
-8. **Add displayName** to memoized subcomponents for debugging
-9. **Use path aliases** - `@/components` instead of `../components`
+- [Documentation](./docs/index.md)
+- [Architecture](./docs/architecture.md)
+- [Design System](./docs/design_system.md)
+- [README](./README.md)
