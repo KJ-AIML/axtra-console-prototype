@@ -1,8 +1,9 @@
 import { memo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/classnames';
-import { Mic, Play, Clock, Zap, Users, Star, ArrowRight, Search, Filter, Loader2, CheckCircle2 } from 'lucide-react';
-import { useSimulationStore } from '../stores';
+import { Mic, Play, Clock, Zap, Users, Star, ArrowRight, Search, Filter, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
+import { useSimulationStore, showError, showSuccess } from '../stores';
+import { ScenariosGridSkeleton, ErrorEmptyState, NoResultsEmptyState, Button } from '../components/ui';
 
 // Difficulty badge styles
 const getDifficultyStyle = (diff: 'Easy' | 'Medium' | 'Hard') => ({
@@ -48,10 +49,11 @@ interface ScenarioCardProps {
     userScore?: number;
   };
   onPractice: (id: string) => void;
+  isLoading?: boolean;
 }
 
-const ScenarioCard = memo<ScenarioCardProps>(({ scenario, onPractice }) => (
-  <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg hover:border-indigo-200 transition-all group">
+const ScenarioCard = memo<ScenarioCardProps>(({ scenario, onPractice, isLoading }) => (
+  <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg hover:border-indigo-200 transition-all duration-300 group">
     {/* Header */}
     <div className="flex items-start justify-between mb-3">
       <div className="flex items-center gap-2">
@@ -75,7 +77,7 @@ const ScenarioCard = memo<ScenarioCardProps>(({ scenario, onPractice }) => (
     </div>
 
     {/* Title & Description */}
-    <h3 className="text-base font-semibold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
+    <h3 className="text-base font-semibold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors duration-200">
       {scenario.title}
     </h3>
     <p className="text-sm text-gray-500 mb-4 line-clamp-2">{scenario.description}</p>
@@ -108,23 +110,35 @@ const ScenarioCard = memo<ScenarioCardProps>(({ scenario, onPractice }) => (
     )}
 
     {/* Action Button */}
-    <button
+    <Button
       onClick={() => onPractice(scenario.id)}
+      isLoading={isLoading}
+      loadingText="Starting..."
+      variant={scenario.status === 'completed' ? 'secondary' : scenario.status === 'in_progress' ? 'primary' : 'primary'}
+      fullWidth
+      leftIcon={<Play size={14} fill="currentColor" />}
       className={cn(
-        'w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-lg transition-colors shadow-sm',
-        scenario.status === 'completed'
-          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-          : scenario.status === 'in_progress'
-          ? 'bg-amber-600 text-white hover:bg-amber-700'
-          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+        scenario.status === 'completed' && '!bg-emerald-600 !text-white hover:!bg-emerald-700',
+        scenario.status === 'in_progress' && '!bg-amber-600 !text-white hover:!bg-amber-700'
       )}
     >
-      <Play size={14} fill="white" />
       {scenario.status === 'completed' ? 'Practice Again' : scenario.status === 'in_progress' ? 'Continue' : 'Start Practice'}
-    </button>
+    </Button>
   </div>
 ));
 ScenarioCard.displayName = 'ScenarioCard';
+
+// Stats Skeleton Component
+const StatsSkeleton = () => (
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    {[...Array(4)].map((_, i) => (
+      <div key={i} className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="h-3 w-20 bg-gray-200 rounded animate-pulse mb-2" />
+        <div className="h-8 w-12 bg-gray-200 rounded animate-pulse" />
+      </div>
+    ))}
+  </div>
+);
 
 interface SimulationsPageProps {
   className?: string;
@@ -145,12 +159,20 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState('All');
+  const [startingScenario, setStartingScenario] = useState<string | null>(null);
 
   // Fetch data on mount
   useEffect(() => {
     fetchScenarios();
     fetchStats();
   }, [fetchScenarios, fetchStats]);
+
+  // Show error toast when error changes
+  useEffect(() => {
+    if (error) {
+      showError('Failed to load scenarios', error);
+    }
+  }, [error]);
 
   // Filter scenarios
   const filteredScenarios = scenarios.filter(scenario => {
@@ -163,11 +185,27 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
 
   const handlePractice = async (scenarioId: string) => {
     try {
+      setStartingScenario(scenarioId);
       await startSimulation(scenarioId);
+      showSuccess('Starting simulation', 'Good luck with your training!');
       navigate(`/simulations/${scenarioId}`);
-    } catch (error) {
-      console.error('Failed to start simulation:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start simulation';
+      showError('Failed to start simulation', message);
+    } finally {
+      setStartingScenario(null);
     }
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory('All');
+    setSelectedDifficulty('All');
+  };
+
+  const handleRetry = () => {
+    fetchScenarios();
+    fetchStats();
   };
 
   // Get unique categories
@@ -191,39 +229,28 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
       </div>
 
       {/* Stats Overview */}
-      {stats && (
+      {isLoading && !stats ? (
+        <StatsSkeleton />
+      ) : stats ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 transition-all hover:shadow-md">
             <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
             <div className="text-xs text-gray-500">Total Scenarios</div>
           </div>
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 transition-all hover:shadow-md">
             <div className="text-2xl font-bold text-emerald-700">{stats.completed}</div>
             <div className="text-xs text-emerald-600">Completed</div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 transition-all hover:shadow-md">
             <div className="text-2xl font-bold text-amber-700">{stats.inProgress}</div>
             <div className="text-xs text-amber-600">In Progress</div>
           </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 transition-all hover:shadow-md">
             <div className="text-2xl font-bold text-indigo-700">{stats.averageScore}</div>
             <div className="text-xs text-indigo-600">Avg Score</div>
           </div>
         </div>
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-xl">
-          <p className="text-sm text-rose-600">{error}</p>
-          <button 
-            onClick={() => fetchScenarios()}
-            className="mt-2 text-xs text-rose-700 font-medium hover:underline"
-          >
-            Try again
-          </button>
-        </div>
-      )}
+      ) : null}
 
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
@@ -236,7 +263,7 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
               placeholder="Search scenarios..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
             />
           </div>
 
@@ -246,7 +273,7 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all"
             >
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
@@ -258,7 +285,7 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
           <select
             value={selectedDifficulty}
             onChange={(e) => setSelectedDifficulty(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all"
           >
             <option value="All">All Levels</option>
             <option value="Easy">Easy</option>
@@ -269,22 +296,34 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
       </div>
 
       {/* Results Count */}
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-gray-500">
-          Showing {filteredScenarios.length} of {scenarios.length} scenarios
-        </p>
-        <button 
-          onClick={() => {setSearchTerm(''); setSelectedCategory('All'); setSelectedDifficulty('All');}}
-          className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-        >
-          Clear filters
-        </button>
-      </div>
+      {!isLoading && !error && (
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-gray-500">
+            Showing {filteredScenarios.length} of {scenarios.length} scenarios
+          </p>
+          {(searchTerm || selectedCategory !== 'All' || selectedDifficulty !== 'All') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+              leftIcon={<RotateCcw size={14} />}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Scenarios Grid */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="animate-spin text-indigo-600" size={32} />
+        <ScenariosGridSkeleton count={8} />
+      ) : error ? (
+        <div className="bg-gray-50 rounded-xl border border-gray-200">
+          <ErrorEmptyState
+            title="Failed to load scenarios"
+            description={error}
+            onRetry={handleRetry}
+          />
         </div>
       ) : filteredScenarios.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -293,44 +332,46 @@ const SimulationsPage: React.FC<SimulationsPageProps> = ({ className }) => {
               key={scenario.id} 
               scenario={scenario} 
               onPractice={handlePractice}
+              isLoading={startingScenario === scenario.id}
             />
           ))}
         </div>
       ) : (
-        <div className="text-center py-20 bg-gray-50 rounded-xl border border-gray-200">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Search size={32} className="text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No scenarios found</h3>
-          <p className="text-gray-500">Try adjusting your search or filters</p>
+        <div className="bg-gray-50 rounded-xl border border-gray-200">
+          <NoResultsEmptyState
+            searchTerm={searchTerm}
+            onClear={handleClearFilters}
+          />
         </div>
       )}
 
       {/* Quick Stats */}
-      <div className="mt-12 grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 rounded-xl p-4">
-          <div className="text-2xl font-bold text-indigo-700">{scenarios.length}</div>
-          <div className="text-sm text-indigo-600">Total Scenarios</div>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-4">
-          <div className="text-2xl font-bold text-emerald-700">
-            {scenarios.filter(s => s.difficulty === 'Easy').length}
+      {!isLoading && !error && scenarios.length > 0 && (
+        <div className="mt-12 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 rounded-xl p-4 transition-all hover:shadow-md">
+            <div className="text-2xl font-bold text-indigo-700">{scenarios.length}</div>
+            <div className="text-sm text-indigo-600">Total Scenarios</div>
           </div>
-          <div className="text-sm text-emerald-600">Beginner Friendly</div>
-        </div>
-        <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-4">
-          <div className="text-2xl font-bold text-amber-700">
-            {scenarios.filter(s => s.difficulty === 'Medium').length}
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-4 transition-all hover:shadow-md">
+            <div className="text-2xl font-bold text-emerald-700">
+              {scenarios.filter(s => s.difficulty === 'Easy').length}
+            </div>
+            <div className="text-sm text-emerald-600">Beginner Friendly</div>
           </div>
-          <div className="text-sm text-amber-600">Intermediate</div>
-        </div>
-        <div className="bg-gradient-to-br from-rose-50 to-rose-100 border border-rose-200 rounded-xl p-4">
-          <div className="text-2xl font-bold text-rose-700">
-            {scenarios.filter(s => s.difficulty === 'Hard').length}
+          <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-4 transition-all hover:shadow-md">
+            <div className="text-2xl font-bold text-amber-700">
+              {scenarios.filter(s => s.difficulty === 'Medium').length}
+            </div>
+            <div className="text-sm text-amber-600">Intermediate</div>
           </div>
-          <div className="text-sm text-rose-600">Advanced</div>
+          <div className="bg-gradient-to-br from-rose-50 to-rose-100 border border-rose-200 rounded-xl p-4 transition-all hover:shadow-md">
+            <div className="text-2xl font-bold text-rose-700">
+              {scenarios.filter(s => s.difficulty === 'Hard').length}
+            </div>
+            <div className="text-sm text-rose-600">Advanced</div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

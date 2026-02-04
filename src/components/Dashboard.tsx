@@ -13,7 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
-import { useDashboardStore, useDashboardDataStore, useUserStore, useSimulationStore } from '../stores';
+import { useDashboardStore, useDashboardDataStore, useUserStore, useSimulationStore, showError } from '../stores';
 
 // Static tabs
 const TABS = ['Overview', 'My Training', 'Team Performance', 'Live Assist', 'QA Archive', 'Compliance'] as const;
@@ -75,7 +75,7 @@ const ScenarioItem = memo<ScenarioItemProps>(({ title, difficulty, duration, typ
 ));
 ScenarioItem.displayName = 'ScenarioItem';
 
-// Loading State
+// Loading State - Enhanced with better skeleton components
 const DashboardSkeleton = () => (
   <div className="max-w-[1200px] mx-auto animate-pulse">
     {/* Header Skeleton */}
@@ -158,8 +158,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
 
   // Fetch dashboard data on mount
   useEffect(() => {
-    fetchDashboardData();
-    fetchRecommendedScenarios();
+    Promise.resolve(fetchDashboardData()).catch((err) => {
+      showError('Failed to load dashboard', err instanceof Error ? err.message : 'Please try again');
+    });
+    Promise.resolve(fetchRecommendedScenarios()).catch((err) => {
+      showError('Failed to load scenarios', err instanceof Error ? err.message : 'Please try again');
+    });
   }, [fetchDashboardData, fetchRecommendedScenarios]);
 
   // Format metric label for display

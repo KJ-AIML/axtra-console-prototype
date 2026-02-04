@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastContainer } from './components/ui';
 import {
   Login,
   Scenarios,
@@ -172,6 +173,7 @@ const App: React.FC<AppProps> = (props) => {
     <ErrorBoundary>
       <BrowserRouter>
         <AppContent {...props} />
+        <ToastContainer />
       </BrowserRouter>
     </ErrorBoundary>
   );
