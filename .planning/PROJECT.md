@@ -1,82 +1,188 @@
-# Axtra Console Restructure
+# Axtra Console - Project Status
 
-## What This Is
+## Overview
 
-Reorganize existing React/Vite application from flat structure to production-ready `src/` layout. The codebase currently has components and source files scattered at the root level, which needs restructuring to meet production standards.
+AI-Powered Call Center Training Platform with real-time coaching, simulation scenarios, and performance analytics.
 
-## Core Value
-
-Zero breaking changes — the application must function identically after restructure.
-
-## Requirements
-
-### Validated
-
-<!-- Existing capabilities from codebase that must be preserved -->
-
-- ✓ React 19.2.4 UI components with TypeScript — existing
-- ✓ Vite 6.2.0 build system with HMR — existing
-- ✓ Tailwind CSS styling via CDN — existing
-- ✓ App.tsx layout orchestration — existing
-- ✓ Sidebar, Header, Dashboard components — existing
-- ✓ TypeScript type definitions (types.ts) — existing
-
-### Active
-
-<!-- Current scope: reorganization goals -->
-
-- [ ] Move source files into `src/` directory
-- [ ] Create `src/components/` for UI components
-- [ ] Create `src/types/` for type definitions
-- [ ] Create `src/App.tsx` and `src/main.tsx` entry points
-- [ ] Create `public/` for static assets
-- [ ] Update Vite config paths and entry points
-- [ ] Update TypeScript config path aliases
-- [ ] Verify development server starts
-- [ ] Verify production build works
-- [ ] Clean up root directory (remove moved files)
-
-### Out of Scope
-
-<!-- Explicit boundaries -->
-
-- Testing infrastructure — defer to v2
-- State management refactor (add Redux/Zustand) — defer to v2
-- Routing implementation — defer to v2
-- New features or functionality changes — out of scope
-
-## Context
-
-**Code review feedback:** Current structure doesn't meet production standards. Code files are mixed at root level with config files, making it hard to scale and confusing for new developers.
-
-**Current state:**
-- components/, docs/ directories exist
-- App.tsx, index.tsx, types.ts at root
-- Configuration files at root (vite.config.ts, tsconfig.json, package.json)
-- No clear separation of source vs config
-
-**Target state:**
-- `src/` directory containing all application code
-- `src/components/` for React components
-- `src/types/` for TypeScript definitions
-- `src/App.tsx`, `src/main.tsx` for entry points
-- `public/` for static assets (index.html moved here)
-- Configuration files remain at root (standard Vite pattern)
-
-## Constraints
-
-- **Functionality**: Zero breaking changes — app must work identically after restructure
-- **Tech stack**: Must maintain React 19.2.4, Vite 6.2.0, TypeScript
-- **Tooling**: Keep existing npm scripts, build configuration
-- **Deployment**: Maintain ability to deploy as static site
-
-## Key Decisions
-
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| src/ convention | Industry standard for production apps | — Pending |
-| Keep Vite entry point config | Update vite.config.ts entry point | — Pending |
-| Preserve existing imports | Update path aliases in tsconfig.json | — Pending |
+**Current Status: MVP Complete** ✅
 
 ---
-*Last updated: 2026-02-03 after initialization*
+
+## ✅ Completed Features
+
+### Authentication System
+- JWT-based authentication with secure sessions
+- User registration and login
+- Protected routes
+- 7-day session expiry
+- Demo account: admin@axtra.local / admin123
+
+### Database (Turso/libsql)
+- Users, sessions, accounts tables
+- Dashboard metrics storage
+- 8 training scenarios with categories
+- User progress tracking (user_scenarios)
+- Skill velocity and QA highlights
+
+### Dashboard
+- Real-time metrics from database
+- Skill velocity progress bar
+- Recommended training scenarios
+- QA highlights cards
+- Responsive layout with sidebar navigation
+
+### Training Simulations
+- 8 AI-powered training scenarios:
+  - Billing Dispute Resolution (Medium)
+  - Technical Support Escalation (Hard)
+  - New Customer Onboarding (Easy)
+  - Complaint De-escalation (Hard)
+  - Upsell Opportunity (Medium)
+  - Service Cancellation Save (Hard)
+  - Product Return Request (Easy)
+  - Account Security Verification (Medium)
+- Scenario filtering (category, difficulty)
+- Search functionality
+- Progress tracking (Not Started / In Progress / Completed)
+
+### Active Call Interface
+- 3-panel layout:
+  - Left: Customer Data Panel (profile, contract, call history)
+  - Center: Live Call Transcription with controls
+  - Right: Axtra Copilot (AI suggestions, emotion monitoring)
+- Real-time emotion analysis (mock cycling)
+- AI suggestions with priority levels
+- Call controls (mute, pause, end)
+- Quick action buttons
+
+### Technical Stack
+- React 19.2.4 + TypeScript 5.8
+- Vite 6.2.0 with HMR
+- Tailwind CSS v4
+- Zustand v5 for state management
+- Turso (libsql) database
+- Vitest 4 + React Testing Library (67 tests passing)
+- Custom HTTP server integrated with Vite dev server
+
+---
+
+## 📋 Test Status
+
+```
+✓ 8 test files passed
+✓ 67 tests passing
+✓ 0 tests failing
+```
+
+Test Coverage:
+- Utility functions (classnames)
+- API client
+- Components (Header, Sidebar, Dashboard, ErrorBoundary)
+- Pages (Simulations index)
+- App integration
+
+---
+
+## 🎯 Next Steps (See ROADMAP.md)
+
+### Phase 1: Polish & Bug Fixes
+- Add skeleton screens for all data loads
+- Toast notifications for actions
+- Empty states
+- Smooth transitions/animations
+
+### Phase 2: Simulation Scoring
+- Score calculation algorithm
+- Post-call summary page
+- Performance history
+
+### Phase 3: Active Calls (Real)
+- Live call monitoring dashboard
+- Real-time transcription
+- Supervisor monitoring
+
+### Phase 4: Recordings Library
+- Recorded simulations list
+- Playback interface
+- Sharing & export
+
+### Phase 5: QA Scoring Interface
+- Manual QA review page
+- Feedback system
+- Coaching notes
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server (runs on port 3001)
+npm run dev
+
+# Run tests
+npm test
+
+# Build for production
+npm run build
+```
+
+### Environment Variables
+
+Create `.env.local`:
+```
+TURSO_DATABASE_URL=libsql://your-database.turso.io
+TURSO_AUTH_TOKEN=your-auth-token
+```
+
+---
+
+## 📁 Project Structure
+
+```
+├── server/               # Backend API
+│   ├── index.ts         # Main server with API routes
+│   ├── db.ts            # Database schema & connection
+│   ├── auth.ts          # Authentication service
+│   ├── simulations.ts   # Training scenarios service
+│   └── dashboard.ts     # Dashboard data service
+├── src/
+│   ├── components/      # React components
+│   ├── pages/           # Page components
+│   ├── stores/          # Zustand stores
+│   ├── lib/             # Utilities (api-client)
+│   ├── utils/           # Helper functions
+│   ├── App.tsx          # Main app component
+│   └── main.tsx         # Entry point
+├── .planning/           # Project planning docs
+│   ├── PROJECT.md       # This file
+│   └── ROADMAP.md       # Feature roadmap
+└── docs/                # Documentation
+```
+
+---
+
+## 🏗️ Architecture
+
+### Frontend
+- React 19 with hooks
+- Zustand for state management
+- React Router for navigation
+- Tailwind CSS for styling
+- Lucide React for icons
+
+### Backend
+- Custom HTTP server (Node.js)
+- Integrated with Vite dev server
+- JWT authentication
+- RESTful API endpoints
+
+### Database
+- Turso (libsql) - SQLite for production
+- Tables: users, sessions, accounts, scenarios, user_scenarios, user_metrics, skill_velocity, qa_highlights
+
+---
+
+*Last updated: 2026-02-04*
