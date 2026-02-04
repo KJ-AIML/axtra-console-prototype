@@ -195,8 +195,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ className }) => {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-3 scroll-smooth">
-        {NAV_SECTIONS.map((section) => (
-          <NavSection key={section.title || 'root'} title={section.title} isCollapsed={isCollapsed}>
+        {NAV_SECTIONS.map((section, index) => (
+          <NavSection key={section.title || `section-${index}`} title={section.title} isCollapsed={isCollapsed}>
             {section.items.map((item) => (
               <NavItem
                 key={item.id}

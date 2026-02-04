@@ -23,6 +23,8 @@ This document provides essential information for AI coding agents working on the
 | Zustand | 5.0.11 | State management |
 | Vitest | 4.0.18 | Testing framework |
 | Lucide React | 0.563.0 | Icon library |
+| @libsql/client | ^0.14.0 | Turso database client |
+| bcryptjs | ^2.4.3 | Password hashing |
 
 ---
 
@@ -54,14 +56,15 @@ npm run test:coverage # Run tests with coverage report
 
 ```
 axtra-console-prototype/
-├── src/
-│   ├── components/       # Reusable UI components
-│   │   ├── Sidebar.tsx       # Navigation sidebar with workspace switcher
-│   │   ├── Header.tsx        # Top bar with breadcrumbs and user menu
-│   │   ├── Dashboard.tsx     # Main dashboard with KPI metrics
-│   │   ├── ErrorBoundary.tsx # Error catching wrapper
-│   │   └── ErrorFallback.tsx # Error UI display
-│   ├── pages/           # Page components for routes
+├── src/                     # Frontend source code
+│   ├── components/          # Reusable UI components
+│   │   ├── Sidebar.tsx          # Navigation sidebar with workspace switcher
+│   │   ├── Header.tsx           # Top bar with breadcrumbs and user menu
+│   │   ├── Dashboard.tsx        # Main dashboard with KPI metrics
+│   │   ├── ErrorBoundary.tsx    # Error catching wrapper
+│   │   └── ErrorFallback.tsx    # Error UI display
+│   ├── pages/               # Page components for routes
+│   │   ├── Login.tsx            # Authentication page (login/register)
 │   │   ├── Scenarios.tsx
 │   │   ├── Personas.tsx
 │   │   ├── Simulations.tsx
@@ -75,39 +78,44 @@ axtra-console-prototype/
 │   │   ├── Settings.tsx
 │   │   ├── DeveloperAPI.tsx
 │   │   ├── Dashboard.tsx
-│   │   └── index.ts         # Barrel export
-│   ├── stores/          # Zustand state management
-│   │   ├── useNavigationStore.ts  # Active nav, route sync, ROUTE_PATHS
-│   │   ├── useSidebarStore.ts     # Sidebar collapse state
-│   │   ├── useUserStore.ts        # User session data
-│   │   ├── useDashboardStore.ts   # Dashboard tabs, simulation state
-│   │   └── index.ts               # Barrel export
-│   ├── lib/             # Utility libraries
-│   │   ├── api-client.ts    # Centralized HTTP client
-│   │   ├── api-types.ts     # TypeScript types for API
-│   │   └── index.ts         # Barrel export
-│   ├── utils/           # Helper functions
-│   │   └── classnames.ts    # cn() utility for merging classes
-│   ├── types/           # TypeScript type definitions
+│   │   └── index.ts             # Barrel export
+│   ├── stores/              # Zustand state management
+│   │   ├── useNavigationStore.ts   # Active nav, route sync, ROUTE_PATHS
+│   │   ├── useSidebarStore.ts      # Sidebar collapse state
+│   │   ├── useUserStore.ts         # User auth state, login/logout
+│   │   ├── useDashboardStore.ts    # Dashboard tabs, simulation state
+│   │   └── index.ts                # Barrel export
+│   ├── lib/                 # Utility libraries
+│   │   ├── api-client.ts       # Centralized HTTP client
+│   │   ├── api-types.ts        # TypeScript types for API
+│   │   └── index.ts            # Barrel export
+│   ├── utils/               # Helper functions
+│   │   └── classnames.ts       # cn() utility for merging classes
+│   ├── types/               # TypeScript type definitions
 │   │   └── index.ts
-│   ├── test/            # Test configuration
-│   │   └── setup.ts         # Global test setup, mocks
-│   ├── App.tsx          # Main app component with routing
-│   ├── main.tsx         # Application entry point
-│   └── index.css        # Global styles with Tailwind v4
-├── docs/                # Documentation files
+│   ├── test/                # Test configuration
+│   │   └── setup.ts            # Global test setup, mocks
+│   ├── App.tsx              # Main app component with auth routing
+│   ├── main.tsx             # Application entry point
+│   └── index.css            # Global styles with Tailwind v4
+├── server/                  # Backend API server
+│   ├── index.ts             # API server entry point
+│   ├── db.ts                # Turso/libsql database configuration
+│   ├── auth.ts              # Authentication service
+│   └── README.md            # Server documentation
+├── docs/                    # Documentation files
 │   ├── architecture.md
 │   ├── contributing.md
 │   ├── design_system.md
 │   ├── index.md
 │   └── style-guide.md
-├── index.html           # HTML template (Vite 6 convention: at root)
-├── tailwind.config.js   # Tailwind CSS configuration
-├── postcss.config.js    # PostCSS configuration
-├── vite.config.ts       # Vite build configuration
-├── vitest.config.ts     # Vitest configuration
-├── tsconfig.json        # TypeScript compiler configuration
-└── package.json         # Dependencies and scripts
+├── index.html               # HTML template (root level, Vite 6 convention)
+├── tailwind.config.js       # Tailwind CSS configuration
+├── postcss.config.js        # PostCSS configuration
+├── vite.config.ts           # Vite build configuration
+├── vitest.config.ts         # Vitest configuration
+├── tsconfig.json            # TypeScript compiler configuration
+└── package.json             # Dependencies and scripts
 ```
 
 ---
@@ -201,6 +209,136 @@ Located in `src/test/setup.ts`:
 - Mocks `ResizeObserver`
 - Mocks `window.matchMedia`
 - Automatic cleanup after each test
+
+---
+
+## Authentication System
+
+The application includes a complete authentication system with user registration, login, logout, and session management using Turso (libsql) as the database.
+
+### Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Frontend  │────▶│  API Server │────▶│    Turso    │
+│  (React)    │◄────│  (Node.js)  │◄────│  (SQLite)   │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### Database
+
+- **Provider**: Turso (libsql) - Serverless SQLite
+- **URL**: `libsql://axdb-kjctsc.aws-ap-south-1.turso.io`
+- **Location**: AWS ap-south-1 (Mumbai)
+
+### Setup Turso Auth Token
+
+1. Install Turso CLI: `curl -sSfL https://get.tur.so/install.sh | bash`
+2. Login: `turso auth login`
+3. Create token: `turso db tokens create axdb`
+4. Add to `.env.local`: `TURSO_AUTH_TOKEN=your_token_here`
+
+### Database Schema
+
+**Users Table:**
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  initials TEXT NOT NULL,
+  role TEXT DEFAULT 'operator',
+  avatar TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Sessions Table:**
+```sql
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  token TEXT UNIQUE NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+**Accounts Table:**
+```sql
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  account_type TEXT DEFAULT 'personal',
+  settings TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user (creates default account) |
+| POST | `/api/auth/login` | Login with email/password |
+| POST | `/api/auth/logout` | Invalidate session |
+| GET | `/api/auth/me` | Get current user |
+| GET | `/api/accounts` | Get user's accounts |
+| GET | `/api/health` | Health check |
+
+### Auth Flow
+
+1. **Registration**: User submits name/email/password → Server creates user + default account → Returns JWT token
+2. **Login**: User submits email/password → Server validates → Creates session → Returns JWT token
+3. **Authenticated Requests**: Include `Authorization: Bearer <token>` header
+4. **Logout**: Server deletes session, client clears token
+
+### Default Seed User
+
+When database is first initialized:
+- **Email**: `admin@axtra.local`
+- **Password**: `admin123`
+
+### Frontend Auth Store (`useUserStore`)
+
+```typescript
+const { 
+  user,              // Current user data
+  accounts,          // User's accounts
+  activeAccount,     // Currently selected account
+  isAuthenticated,   // Auth status
+  isLoading,         // Loading state
+  error,             // Error message
+  login,             // (email, password) => Promise<void>
+  register,          // (name, email, password) => Promise<void>
+  logout,            // () => Promise<void>
+  fetchCurrentUser,  // () => Promise<void>
+  fetchAccounts,     // () => Promise<void>
+  init,              // () => Promise<void> - call on app start
+} = useUserStore();
+```
+
+### Protected Routes
+
+Routes in `App.tsx` are wrapped with `ProtectedRoute` component which:
+- Checks authentication status
+- Redirects to `/login` if not authenticated
+- Shows loading spinner during auth check
+
+### Environment Variables
+
+```
+VITE_API_BASE_URL=http://localhost:3001/api
+TURSO_DATABASE_URL=libsql://axdb-kjctsc.aws-ap-south-1.turso.io
+TURSO_AUTH_TOKEN=your_token_here
+API_PORT=3001
+```
 
 ---
 
@@ -383,6 +521,8 @@ Located in `src/lib/api-types.ts`:
 - `zustand@5.0.11`
 - `lucide-react@0.563.0`
 - `clsx@2.1.1` + `tailwind-merge@3.4.0`
+- `@libsql/client@^0.14.0` - Turso database client
+- `bcryptjs@^2.4.3` - Password hashing
 
 ### Development
 - `vite@6.2.0`
@@ -414,11 +554,15 @@ Located in `src/lib/api-types.ts`:
 
 ## Security Considerations
 
-- API client includes auth token management via `setAuthToken`/`getAuthToken`
-- Auth tokens are stored in memory (not localStorage in current implementation)
-- API client has timeout handling to prevent hanging requests
-- Error boundaries prevent UI crashes from exposing sensitive information
-- Environment variables for sensitive configuration (API keys)
+- **Password Hashing**: bcrypt with salt rounds 10
+- **Session Tokens**: UUID-based tokens with 7-day expiration
+- **Token Storage**: JWT tokens stored in localStorage (consider httpOnly cookies for production)
+- **Auth Headers**: Bearer token authentication via `Authorization` header
+- **CORS**: Configured for development (update for production)
+- **SQL Injection**: Parameterized queries via libsql client
+- **Error Handling**: Generic error messages to prevent information leakage
+- **Environment Variables**: Sensitive config (DB tokens, API keys) in `.env.local` (never commit)
+- **Error Boundaries**: Prevent UI crashes from exposing stack traces
 
 ---
 

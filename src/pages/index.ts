@@ -1,5 +1,6 @@
 // Re-export pages with their default exports
 // Note: Each page uses `export default memo(Component)`
+export { default as Login } from './Login';
 export { default as Dashboard } from './Dashboard';
 export { default as Scenarios } from './Scenarios';
 export { default as Personas } from './Personas';
