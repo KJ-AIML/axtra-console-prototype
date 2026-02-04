@@ -17,6 +17,15 @@ import {
   type RegisterRequest,
   type LoginRequest,
 } from './auth';
+import {
+  getDashboardData,
+  getUserMetrics,
+  getUserScenarios,
+  getSkillVelocity,
+  getQaHighlights,
+  seedScenarios,
+  seedUserDashboardData,
+} from './dashboard';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -156,6 +165,153 @@ const routes: Record<string, Record<string, (req: IncomingMessage, res: ServerRe
     const accounts = await getUserAccounts(user.id);
     sendJson(res, 200, { success: true, data: { accounts } });
   },
+
+  // Dashboard Routes
+  // Get full dashboard data
+  'GET/dashboard': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    const data = await getDashboardData(user.id);
+    sendJson(res, 200, { success: true, data });
+  },
+
+  // Get user metrics
+  'GET/dashboard/metrics': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    const metrics = await getUserMetrics(user.id);
+    sendJson(res, 200, { success: true, data: { metrics } });
+  },
+
+  // Get user scenarios
+  'GET/dashboard/scenarios': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    const scenarios = await getUserScenarios(user.id);
+    sendJson(res, 200, { success: true, data: { scenarios } });
+  },
+
+  // Get skill velocity
+  'GET/dashboard/skill-velocity': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    const skillVelocity = await getSkillVelocity(user.id);
+    sendJson(res, 200, { success: true, data: { skillVelocity } });
+  },
+
+  // Get QA highlights
+  'GET/dashboard/qa-highlights': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    const qaHighlights = await getQaHighlights(user.id);
+    sendJson(res, 200, { success: true, data: { qaHighlights } });
+  },
+
+  // Demo/Seed endpoints (for development/testing)
+  // Reset dashboard data for current user
+  'POST/demo/reset-my-data': async (req, res) => {
+    const token = getToken(req);
+    
+    if (!token) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    
+    const user = await validateSession(token);
+    
+    if (!user) {
+      sendJson(res, 401, { error: 'Invalid or expired session' });
+      return;
+    }
+    
+    try {
+      // Clear existing data
+      await db.execute({ sql: 'DELETE FROM user_metrics WHERE user_id = ?', args: [user.id] });
+      await db.execute({ sql: 'DELETE FROM skill_velocity WHERE user_id = ?', args: [user.id] });
+      await db.execute({ sql: 'DELETE FROM qa_highlights WHERE user_id = ?', args: [user.id] });
+      await db.execute({ sql: 'DELETE FROM user_scenarios WHERE user_id = ?', args: [user.id] });
+      
+      // Reseed data
+      await seedUserDashboardData(user.id);
+      
+      sendJson(res, 200, { success: true, message: 'Dashboard data reset successfully' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reset data';
+      sendJson(res, 500, { error: message });
+    }
+  },
+
+  // Get demo login credentials
+  'GET/demo/credentials': async (req, res) => {
+    sendJson(res, 200, { 
+      success: true, 
+      data: {
+        email: 'admin@axtra.local',
+        password: 'admin123',
+        note: 'Demo account for testing'
+      }
+    });
+  },
 };
 
 // Main request handler
@@ -223,6 +379,7 @@ export function apiPlugin() {
       try {
         await initDatabase();
         await seedInitialUser();
+        await seedScenarios();
       } catch (error) {
         console.error('Database setup failed:', error);
       }
@@ -250,6 +407,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     try {
       await initDatabase();
       await seedInitialUser();
+      await seedScenarios();
       await startServer();
     } catch (error) {
       console.error('Failed to start server:', error);

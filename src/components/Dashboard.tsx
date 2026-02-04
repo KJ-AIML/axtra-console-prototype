@@ -1,46 +1,38 @@
 
+import { useEffect } from 'react';
 import { memo } from 'react';
 import {
   ChevronDown,
   Settings,
-  LayoutGrid,
   Clock,
   CheckCircle2,
   Play,
   ArrowRight,
   TrendingUp,
-  Brain
+  Brain,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
-import type { MetricCardProps, ScenarioItemProps } from '../types';
-import { useDashboardStore } from '../stores';
+import { useDashboardStore, useDashboardDataStore, useUserStore } from '../stores';
 
-// Static data moved outside component to prevent re-creation
+// Static tabs
 const TABS = ['Overview', 'My Training', 'Team Performance', 'Live Assist', 'QA Archive', 'Compliance'] as const;
 
-const METRICS: MetricCardProps[] = [
-  { label: 'Avg Handle Time (AHT)', value: '4m 22s', subtext: '-12% from target', isFirst: true },
-  { label: 'First Call Resolution', value: '84.2%', subtext: '+2.1% this week' },
-  { label: 'Avg QA Score', value: '92/100', subtext: 'Top 5% of team' },
-  { label: 'Compliance Rate', value: '100%', subtext: 'No violations detected' },
-  { label: 'Escalation Rate', value: '4.1%', subtext: 'Below industry avg' },
-] as const;
-
-const SCENARIOS: ScenarioItemProps[] = [
-  { title: 'Billing Dispute - Aggressive Persona', diff: 'Hard', duration: '8-12 mins', type: 'Voice Simulation' },
-  { title: 'Technical Support - Broadband Connectivity', diff: 'Medium', duration: '15 mins', type: 'Knowledge Check' },
-  { title: 'New Promotion - Upsell Opportunity', diff: 'Easy', duration: '5 mins', type: 'Objection Handling' },
-  { title: 'Privacy & Data Protection Verification', diff: 'Hard', duration: '10 mins', type: 'Compliance Training' },
-] as const;
-
 // Difficulty badge styles
-const getDifficultyBadgeClass = (diff: ScenarioItemProps['diff']) => ({
+const getDifficultyBadgeClass = (diff: 'Easy' | 'Medium' | 'Hard') => ({
   'Easy': 'text-emerald-600 bg-emerald-50 border-emerald-100',
   'Medium': 'text-amber-600 bg-amber-50 border-amber-100',
   'Hard': 'text-rose-600 bg-rose-50 border-rose-100',
 }[diff]);
 
-// Memoized MetricCard component
+// Metric Card Component
+interface MetricCardProps {
+  label: string;
+  value: string;
+  subtext?: string;
+  isFirst?: boolean;
+}
+
 const MetricCard = memo<MetricCardProps>(({ label, value, subtext, isFirst }) => (
   <div className={cn('flex-1 p-5', !isFirst && 'border-l border-gray-100')}>
     <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-tight mb-2 truncate">{label}</h4>
@@ -50,8 +42,15 @@ const MetricCard = memo<MetricCardProps>(({ label, value, subtext, isFirst }) =>
 ));
 MetricCard.displayName = 'MetricCard';
 
-// Memoized ScenarioItem component
-const ScenarioItem = memo<ScenarioItemProps>(({ title, diff, duration, type }) => (
+// Scenario Item Component
+interface ScenarioItemProps {
+  title: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  duration: string;
+  type: string;
+}
+
+const ScenarioItem = memo<ScenarioItemProps>(({ title, difficulty, duration, type }) => (
   <div className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:border-indigo-200 hover:shadow-sm transition-all cursor-pointer group">
     <div className="flex items-center gap-4">
       <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
@@ -62,8 +61,8 @@ const ScenarioItem = memo<ScenarioItemProps>(({ title, diff, duration, type }) =
         <div className="flex items-center gap-3 mt-1">
           <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {duration}</span>
           <span className="text-xs text-gray-500">•</span>
-          <span className={cn('text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded border', getDifficultyBadgeClass(diff))}>
-            {diff}
+          <span className={cn('text-[10px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded border', getDifficultyBadgeClass(difficulty))}>
+            {difficulty}
           </span>
         </div>
       </div>
@@ -76,6 +75,64 @@ const ScenarioItem = memo<ScenarioItemProps>(({ title, diff, duration, type }) =
 ));
 ScenarioItem.displayName = 'ScenarioItem';
 
+// Loading State
+const DashboardSkeleton = () => (
+  <div className="max-w-[1200px] mx-auto animate-pulse">
+    {/* Header Skeleton */}
+    <div className="flex items-start justify-between mb-8">
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <div className="h-6 w-24 bg-gray-200 rounded-full"></div>
+          <div className="h-6 w-32 bg-gray-200 rounded-full"></div>
+        </div>
+        <div className="h-4 w-40 bg-gray-200 rounded"></div>
+        <div className="h-8 w-64 bg-gray-200 rounded"></div>
+      </div>
+      <div className="flex gap-2">
+        <div className="h-10 w-32 bg-gray-200 rounded-lg"></div>
+        <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
+      </div>
+    </div>
+
+    {/* Tabs Skeleton */}
+    <div className="flex items-center justify-between border-b border-gray-200 mb-6">
+      <div className="flex gap-6">
+        {[1, 2, 3, 4, 5, 6].map(i => (
+          <div key={i} className="h-8 w-24 bg-gray-200 rounded mb-4"></div>
+        ))}
+      </div>
+      <div className="h-8 w-32 bg-gray-200 rounded-lg mb-4"></div>
+    </div>
+
+    {/* Metrics Skeleton */}
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-8">
+      <div className="flex">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className={cn('flex-1 p-5', i > 1 && 'border-l border-gray-100')}>
+            <div className="h-3 w-24 bg-gray-200 rounded mb-2"></div>
+            <div className="h-8 w-16 bg-gray-200 rounded mb-1"></div>
+            <div className="h-3 w-20 bg-gray-200 rounded"></div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Content Skeleton */}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-2 space-y-6">
+        <div className="h-6 w-48 bg-gray-200 rounded"></div>
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-20 bg-gray-200 rounded-xl"></div>
+        ))}
+      </div>
+      <div className="space-y-6">
+        <div className="h-48 bg-gray-200 rounded-2xl"></div>
+        <div className="h-48 bg-gray-200 rounded-2xl"></div>
+      </div>
+    </div>
+  </div>
+);
+
 interface DashboardProps {
   className?: string;
 }
@@ -83,6 +140,42 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   const activeTab = useDashboardStore((state) => state.activeTab);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
+  
+  const user = useUserStore((state) => state.user);
+  
+  const { 
+    metrics, 
+    scenarios, 
+    skillVelocity, 
+    qaHighlights, 
+    isLoading, 
+    fetchDashboardData 
+  } = useDashboardDataStore();
+
+  // Fetch dashboard data on mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Format metric label for display
+  const formatMetricLabel = (key: string): string => {
+    const labels: Record<string, string> = {
+      'aht': 'Avg Handle Time (AHT)',
+      'fcr': 'First Call Resolution',
+      'qa_score': 'Avg QA Score',
+      'compliance': 'Compliance Rate',
+      'escalation': 'Escalation Rate',
+    };
+    return labels[key] || key;
+  };
+
+  if (isLoading) {
+    return (
+      <div className={cn('max-w-[1200px] mx-auto', className)}>
+        <DashboardSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className={cn('max-w-[1200px] mx-auto', className)}>
@@ -99,7 +192,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
               Axtra v4.2 Loaded
             </div>
           </div>
-          <h2 className="text-sm text-gray-500 font-normal mb-1">Welcome back, Operator Kj</h2>
+          <h2 className="text-sm text-gray-500 font-normal mb-1">
+            Welcome back, {user?.name || 'Operator'}
+          </h2>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Console Performance</h1>
         </div>
 
@@ -136,9 +231,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
       {/* KPI Grid */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mb-8 relative">
         <div className="flex flex-wrap md:flex-nowrap">
-          {METRICS.map((metric) => (
-            <MetricCard key={metric.label} {...metric} />
-          ))}
+          {metrics.length > 0 ? (
+            metrics.map((metric, index) => (
+              <MetricCard 
+                key={metric.id} 
+                label={formatMetricLabel(metric.metricKey)}
+                value={metric.metricValue}
+                subtext={metric.subtext}
+                isFirst={index === 0}
+              />
+            ))
+          ) : (
+            // Fallback if no metrics
+            <div className="p-5 text-gray-500">No metrics available</div>
+          )}
         </div>
         <div className="absolute bottom-0 left-0 w-full h-[2px] bg-indigo-600"></div>
       </div>
@@ -151,9 +257,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">View Scenario Library</button>
           </div>
           <div className="space-y-3">
-            {SCENARIOS.map((scenario, index) => (
-              <ScenarioItem key={`${scenario.title}-${index}`} {...scenario} />
-            ))}
+            {scenarios.length > 0 ? (
+              scenarios.map((scenario) => (
+                <ScenarioItem 
+                  key={scenario.id}
+                  title={scenario.title}
+                  difficulty={scenario.difficulty}
+                  duration={scenario.duration}
+                  type={scenario.type}
+                />
+              ))
+            ) : (
+              <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-xl">
+                No training scenarios available
+              </div>
+            )}
           </div>
         </div>
 
@@ -166,32 +284,69 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
                 <TrendingUp size={16} className="text-indigo-600" />
                 <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Skill Velocity</span>
               </div>
-              <h3 className="text-xl font-bold mb-2 text-gray-900">Proficiency Level 8</h3>
-              <p className="text-gray-500 text-sm mb-6 font-medium">You've completed 4 scenarios this week. You're ready for more complex billing disputes.</p>
-              <div className="w-full bg-gray-100 h-2 rounded-full mb-2 overflow-hidden">
-                <div className="bg-indigo-600 h-full rounded-full w-[75%] transition-all duration-1000 shadow-[0_0_8px_rgba(79,70,229,0.3)]"></div>
-              </div>
-              <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase">
-                <span>Level 7</span>
-                <span>75% to Level 9</span>
-              </div>
+              {skillVelocity ? (
+                <>
+                  <h3 className="text-xl font-bold mb-2 text-gray-900">Proficiency Level {skillVelocity.level}</h3>
+                  <p className="text-gray-500 text-sm mb-6 font-medium">
+                    {skillVelocity.description || `You're making great progress! Keep up the good work.`}
+                  </p>
+                  <div className="w-full bg-gray-100 h-2 rounded-full mb-2 overflow-hidden">
+                    <div 
+                      className="bg-indigo-600 h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(79,70,229,0.3)]"
+                      style={{ width: `${skillVelocity.progressPercentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase">
+                    <span>Level {skillVelocity.level}</span>
+                    <span>{skillVelocity.progressPercentage}% to Level {skillVelocity.level + 1}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="py-4 text-center text-gray-500">
+                  <Loader2 className="animate-spin mx-auto mb-2" size={24} />
+                  Loading skill data...
+                </div>
+              )}
             </div>
           </div>
 
+          {/* QA Highlights */}
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
             <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
               <CheckCircle2 size={16} className="text-emerald-500" />
               Recent QA Highlights
             </h3>
             <div className="space-y-4">
-              <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                <p className="text-xs font-semibold text-emerald-800">Excellent Empathy</p>
-                <p className="text-[10px] text-emerald-600 mt-0.5 font-medium leading-relaxed">Detected in call #4829 - "You handled the customer frustration perfectly."</p>
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                <p className="text-xs font-semibold text-amber-800">Closing Script Gap</p>
-                <p className="text-[10px] text-amber-600 mt-0.5 font-medium leading-relaxed">Missed required disclosure in call #4811. Reviewing recommended.</p>
-              </div>
+              {qaHighlights.length > 0 ? (
+                qaHighlights.slice(0, 2).map((highlight) => (
+                  <div 
+                    key={highlight.id}
+                    className={cn(
+                      'p-3 rounded-xl border',
+                      highlight.type === 'positive' 
+                        ? 'bg-emerald-50 border-emerald-100' 
+                        : 'bg-amber-50 border-amber-100'
+                    )}
+                  >
+                    <p className={cn(
+                      'text-xs font-semibold',
+                      highlight.type === 'positive' ? 'text-emerald-800' : 'text-amber-800'
+                    )}>
+                      {highlight.title}
+                    </p>
+                    <p className={cn(
+                      'text-[10px] mt-0.5 font-medium leading-relaxed',
+                      highlight.type === 'positive' ? 'text-emerald-600' : 'text-amber-600'
+                    )}>
+                      {highlight.description}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center text-gray-400 text-sm py-4">
+                  No QA highlights yet
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -72,6 +72,87 @@ export const SCHEMA = {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `,
+
+  // Dashboard metrics (KPIs)
+  user_metrics: `
+    CREATE TABLE IF NOT EXISTS user_metrics (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      metric_key TEXT NOT NULL,
+      metric_value TEXT NOT NULL,
+      subtext TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, metric_key)
+    )
+  `,
+
+  // Training scenarios
+  scenarios: `
+    CREATE TABLE IF NOT EXISTS scenarios (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      difficulty TEXT NOT NULL CHECK(difficulty IN ('Easy', 'Medium', 'Hard')),
+      duration TEXT NOT NULL,
+      type TEXT NOT NULL,
+      category TEXT,
+      is_recommended INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+
+  // User scenario progress
+  user_scenarios: `
+    CREATE TABLE IF NOT EXISTS user_scenarios (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      scenario_id TEXT NOT NULL,
+      status TEXT DEFAULT 'not_started' CHECK(status IN ('not_started', 'in_progress', 'completed')),
+      score INTEGER,
+      started_at DATETIME,
+      completed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+      UNIQUE(user_id, scenario_id)
+    )
+  `,
+
+  // Skill velocity / progress
+  skill_velocity: `
+    CREATE TABLE IF NOT EXISTS skill_velocity (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      level INTEGER NOT NULL DEFAULT 1,
+      current_xp INTEGER NOT NULL DEFAULT 0,
+      max_xp INTEGER NOT NULL DEFAULT 100,
+      progress_percentage INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `,
+
+  // QA Highlights
+  qa_highlights: `
+    CREATE TABLE IF NOT EXISTS qa_highlights (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('positive', 'improvement')),
+      call_id TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `,
 };
 
 /**

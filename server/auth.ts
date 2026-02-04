@@ -4,6 +4,7 @@
  */
 
 import { db } from './db';
+import { seedUserDashboardData } from './dashboard';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
@@ -110,6 +111,9 @@ export async function registerUser(data: RegisterRequest): Promise<AuthResponse>
     `,
     args: [accountId, userId, 'Default Account', 'personal', '{}', now, now],
   });
+
+  // Seed dashboard data for new user
+  await seedUserDashboardData(userId);
   
   // Create session
   const { token, expiresAt } = await createSession(userId);
@@ -298,6 +302,7 @@ export async function getUserAccounts(userId: string): Promise<any[]> {
 
 /**
  * Create a seed user for testing (if no users exist)
+ * Also ensures dashboard data exists for the admin user
  */
 export async function seedInitialUser(): Promise<void> {
   const result = await db.execute('SELECT COUNT(*) as count FROM users');
@@ -313,11 +318,36 @@ export async function seedInitialUser(): Promise<void> {
         name: 'Admin User',
       });
       
-      console.log('✅ Seed user created:');
+      console.log('✅ Seed user created with dashboard data:');
       console.log('   Email: admin@axtra.local');
       console.log('   Password: admin123');
     } catch (error) {
       console.error('Failed to create seed user:', error);
+    }
+  } else {
+    // Check if admin user exists but is missing dashboard data
+    // (for existing databases before dashboard feature was added)
+    const adminResult = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: ['admin@axtra.local'],
+    });
+    
+    if (adminResult.rows.length > 0) {
+      const adminId = adminResult.rows[0].id as string;
+      
+      // Check if user has metrics
+      const metricsResult = await db.execute({
+        sql: 'SELECT COUNT(*) as count FROM user_metrics WHERE user_id = ?',
+        args: [adminId],
+      });
+      
+      const metricsCount = (metricsResult.rows[0].count as number) || 0;
+      
+      if (metricsCount === 0) {
+        console.log('🌱 Adding dashboard data to existing admin user...');
+        await seedUserDashboardData(adminId);
+        console.log('✅ Dashboard data added to admin user');
+      }
     }
   }
 }
