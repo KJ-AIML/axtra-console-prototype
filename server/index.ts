@@ -36,6 +36,12 @@ import {
   getRecommendedScenarios,
   seedScenarios,
 } from './simulations';
+import {
+  generateLiveKitToken,
+  isLiveKitConfigured,
+  generateRoomName,
+  type TokenRequest,
+} from './livekit';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -430,6 +436,59 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       
       const scenarios = await getRecommendedScenarios(user.id);
       sendJson(res, 200, { success: true, data: { scenarios } });
+      return;
+    }
+
+    // ============================================
+    // LiveKit Token Generation (for real-time calls)
+    // ============================================
+    
+    // Generate LiveKit token for voice call
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'livekit' && segments[1] === 'token') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      if (!isLiveKitConfigured()) {
+        sendJson(res, 503, { error: 'LiveKit not configured' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req) as { scenarioId?: string };
+        
+        if (!body.scenarioId) {
+          sendJson(res, 400, { error: 'scenarioId is required' });
+          return;
+        }
+        
+        const roomName = generateRoomName(body.scenarioId, user.id);
+        const tokenData = await generateLiveKitToken({
+          roomName,
+          participantName: user.name || user.email,
+          userId: user.id,
+        });
+        
+        sendJson(res, 200, { 
+          success: true, 
+          data: {
+            token: tokenData.token,
+            url: tokenData.url,
+            roomName,
+          }
+        });
+      } catch (error) {
+        console.error('LiveKit token generation error:', error);
+        sendJson(res, 500, { error: 'Failed to generate token' });
+      }
       return;
     }
 

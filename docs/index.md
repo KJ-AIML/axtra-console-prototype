@@ -23,7 +23,7 @@ npm install
 
 # Setup environment
 cp .env.local.example .env.local
-# Edit .env.local with your Turso credentials
+# Edit .env.local with your Turso + LiveKit credentials
 
 # Start dev server (runs both frontend + backend)
 npm run dev
@@ -50,6 +50,7 @@ npm run build
 | **Authentication** | JWT-based login/registration with Turso |
 | **Dashboard** | Real-time KPIs, skill velocity, QA highlights |
 | **Training** | 8 AI-powered simulation scenarios |
+| **Voice AI** | Live voice calls with AI agents via LiveKit |
 | **Call Interface** | 3-panel view with AI coaching |
 | **Progress Tracking** | Database-backed user progress |
 
@@ -58,14 +59,14 @@ npm run build
 ## 🏗️ Tech Stack
 
 ```
-Frontend          Backend           Database
-─────────         ───────           ────────
-React 19          Node.js HTTP      Turso (libsql)
-TypeScript 5.8    API Server        Serverless SQLite
-Vite 6            bcryptjs          
-Tailwind v4       @libsql/client
-React Router v7
-Zustand v5
+Frontend          Backend           Database        Voice/Video
+─────────         ───────           ────────        ───────────
+React 19          Node.js HTTP      Turso (libsql)  LiveKit (WebRTC)
+TypeScript 5.8    API Server        Serverless      GPT-4o Realtime
+Vite 6            bcryptjs          SQLite          
+Tailwind v4       @libsql/client                    
+React Router v7                                     
+Zustand v5                                          
 Vitest
 ```
 

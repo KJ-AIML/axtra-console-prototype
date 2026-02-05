@@ -1,20 +1,26 @@
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../utils/classnames';
 import { apiClient } from '../lib/api-client';
+import { useLiveKitStore, showError, showSuccess } from '../stores';
+import {
+  LiveKitCallControls,
+  LiveKitTranscript,
+  LiveKitConnectionStatus,
+  LiveKitWelcomeScreen,
+} from '../components/livekit';
+import { formatDuration } from '../lib/livekit';
 import { 
-  Phone, PhoneOff, Mic, MicOff, Pause, Play, ArrowLeft,
-  User, Clock, Calendar, FileText, History, TrendingUp,
-  AlertCircle, CheckCircle, Lightbulb, MessageSquare,
-  Smile, Frown, Meh, Zap, Shield, ChevronRight,
-  Volume2, MoreHorizontal, Loader2
+  Phone, PhoneOff, ArrowLeft, User, Clock, Calendar, 
+  FileText, History, TrendingUp, AlertCircle, CheckCircle, 
+  Lightbulb, MessageSquare, Smile, Frown, Meh, Zap, Shield, 
+  ChevronRight, Volume2, MoreHorizontal, Loader2, Wifi, WifiOff
 } from 'lucide-react';
 
 // ============================================
-// MOCK DATA (for customer, transcription, etc.)
+// MOCK DATA (for customer and AI analysis)
 // ============================================
 
-// Mock customer data
 const MOCK_CUSTOMER = {
   id: 'CUST-2847',
   name: 'Sarah Thompson',
@@ -40,7 +46,6 @@ const MOCK_CUSTOMER = {
   avgCallDuration: '8m 32s',
 };
 
-// Mock call history
 const MOCK_CALL_HISTORY = [
   {
     id: 'CALL-4521',
@@ -71,7 +76,6 @@ const MOCK_CALL_HISTORY = [
   },
 ];
 
-// Mock real-time analysis
 const MOCK_AI_SUGGESTIONS = [
   {
     id: 1,
@@ -96,18 +100,8 @@ const MOCK_AI_SUGGESTIONS = [
   },
 ];
 
-// Mock transcription data
-const MOCK_TRANSCRIPTION = [
-  { id: 1, speaker: 'customer', text: 'Hi, I\'m really frustrated right now.', timestamp: '00:03', emotion: 'frustrated' },
-  { id: 2, speaker: 'operator', text: 'I completely understand, Sarah. I\'m here to help you resolve this today.', timestamp: '00:06', emotion: 'empathetic' },
-  { id: 3, speaker: 'customer', text: 'This is the third time I\'m calling about the same billing issue!', timestamp: '00:12', emotion: 'angry' },
-  { id: 4, speaker: 'operator', text: 'I sincerely apologize for the repeated inconvenience. Let me review your account and previous interactions right away.', timestamp: '00:18', emotion: 'professional' },
-  { id: 5, speaker: 'customer', text: 'I\'ve been a loyal customer for 5 years and this is how I\'m treated?', timestamp: '00:25', emotion: 'disappointed' },
-  { id: 6, speaker: 'operator', text: 'Your loyalty means everything to us, Sarah. As a Gold member, I\'m going to personally ensure this is fixed today and apply appropriate credits to your account.', timestamp: '00:32', emotion: 'reassuring' },
-];
-
 // ============================================
-// COMPONENT: Customer Data Panel (Section 1 - Left)
+// COMPONENT: Customer Data Panel (Left)
 // ============================================
 
 const CustomerDataPanel = memo(() => {
@@ -126,9 +120,7 @@ const CustomerDataPanel = memo(() => {
             <div className="flex items-center gap-2">
               <span className={cn(
                 'px-2 py-0.5 text-[10px] font-bold uppercase rounded-full',
-                MOCK_CUSTOMER.tier === 'Gold' && 'bg-amber-100 text-amber-700',
-                MOCK_CUSTOMER.tier === 'Silver' && 'bg-gray-100 text-gray-700',
-                MOCK_CUSTOMER.tier === 'Platinum' && 'bg-indigo-100 text-indigo-700',
+                'bg-amber-100 text-amber-700'
               )}>
                 {MOCK_CUSTOMER.tier} Tier
               </span>
@@ -267,7 +259,7 @@ const CustomerDataPanel = memo(() => {
 CustomerDataPanel.displayName = 'CustomerDataPanel';
 
 // ============================================
-// COMPONENT: AI Analysis Panel (Section 3 - Right)
+// COMPONENT: AI Analysis Panel (Right)
 // ============================================
 
 const AIAnalysisPanel = memo(() => {
@@ -337,7 +329,7 @@ const AIAnalysisPanel = memo(() => {
 
         {/* Emotion Timeline */}
         <div className="mt-3 flex items-center gap-1">
-          {moodOptions.map((mood, idx) => (
+          {moodOptions.map((mood) => (
             <div
               key={mood}
               className={cn(
@@ -418,156 +410,124 @@ const AIAnalysisPanel = memo(() => {
 AIAnalysisPanel.displayName = 'AIAnalysisPanel';
 
 // ============================================
-// COMPONENT: Transcription Panel (Section 2 - Center) - Call & Text
+// COMPONENT: Live Call Panel (Center)
 // ============================================
 
-const TranscriptionPanel = memo(() => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [isCallActive, setIsCallActive] = useState(true);
-  const [callDuration, setCallDuration] = useState(42);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+interface LiveCallPanelProps {
+  scenarioId: string;
+  scenario: Scenario;
+}
 
-  // Auto-scroll to bottom
+const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
+  const {
+    isConnected,
+    isConnecting,
+    isMuted,
+    isPaused,
+    callDuration,
+    connectionError,
+    canPlaybackAudio,
+    transcripts,
+    connect,
+    disconnect,
+    toggleMute,
+    togglePause,
+    startAudio,
+  } = useLiveKitStore();
+
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [step, setStep] = useState<'welcome' | 'connecting' | 'connected'>('welcome');
+
+  // Cleanup on unmount
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    return () => {
+      disconnect();
+    };
+  }, [disconnect]);
+
+  // Handle start call
+  const handleStartCall = useCallback(async () => {
+    try {
+      setStep('connecting');
+      await connect(scenarioId);
+      setStep('connected');
+      setShowWelcome(false);
+      showSuccess('Connected', 'Voice call started. The AI agent will join shortly.');
+    } catch (err) {
+      console.error('Failed to connect:', err);
+      setStep('welcome');
+      showError('Connection failed', err instanceof Error ? err.message : 'Failed to connect to voice server');
     }
-  }, []);
+  }, [scenarioId, connect]);
 
-  // Call timer
-  useEffect(() => {
-    if (!isCallActive || isPaused) return;
-    const interval = setInterval(() => setCallDuration(d => d + 1), 1000);
-    return () => clearInterval(interval);
-  }, [isCallActive, isPaused]);
+  // Handle enable audio (browser requires user gesture)
+  const handleEnableAudio = useCallback(async () => {
+    await startAudio();
+  }, [startAudio]);
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Handle end call
+  const handleEndCall = useCallback(() => {
+    disconnect();
+    setShowWelcome(true);
+    setStep('welcome');
+    showSuccess('Call ended', 'Your practice session has been saved.');
+  }, [disconnect]);
+
+  // Show welcome screen before call starts
+  if (showWelcome || (!isConnected && !isConnecting)) {
+    return (
+      <div className="h-full flex flex-col bg-white border-l border-r border-gray-200">
+        <LiveKitWelcomeScreen
+          scenarioTitle={scenario.title}
+          personaName={scenario.persona}
+          difficulty={scenario.difficulty}
+          isConnecting={isConnecting}
+          connectionError={connectionError}
+          needsAudioPermission={isConnected && !canPlaybackAudio}
+          onStartCall={handleStartCall}
+          onEnableAudio={handleEnableAudio}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="h-full flex flex-col bg-white border-l border-gray-200">
+    <div className="h-full flex flex-col bg-white border-l border-r border-gray-200">
       {/* Call Header */}
       <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'w-3 h-3 rounded-full animate-pulse',
-              isCallActive ? 'bg-emerald-500' : 'bg-gray-400'
-            )} />
-            <span className="text-sm font-medium text-gray-700">
-              {isCallActive ? 'Call in Progress' : 'Call Ended'}
-            </span>
+        <LiveKitConnectionStatus
+          isConnected={isConnected}
+          isConnecting={isConnecting}
+          callDuration={callDuration}
+        />
+
+        {/* Error message */}
+        {connectionError && (
+          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
+            <WifiOff size={16} className="text-rose-500" />
+            <span className="text-sm text-rose-700">{connectionError}</span>
           </div>
-          <div className="text-lg font-mono font-semibold text-gray-900">
-            {formatDuration(callDuration)}
-          </div>
-        </div>
+        )}
 
         {/* Call Controls */}
-        <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={() => setIsMuted(!isMuted)}
-            className={cn(
-              'p-3 rounded-full transition-all',
-              isMuted ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-          <button
-            onClick={() => setIsPaused(!isPaused)}
-            className={cn(
-              'p-3 rounded-full transition-all',
-              isPaused ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            )}
-          >
-            {isPaused ? <Play size={20} /> : <Pause size={20} />}
-          </button>
-          <button
-            onClick={() => setIsCallActive(false)}
-            className="p-3 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-all"
-          >
-            <PhoneOff size={20} />
-          </button>
+        <div className="mt-4">
+          <LiveKitCallControls
+            isMuted={isMuted}
+            isPaused={isPaused}
+            isConnecting={isConnecting}
+            onToggleMute={toggleMute}
+            onTogglePause={togglePause}
+            onEndCall={handleEndCall}
+          />
         </div>
       </div>
 
       {/* Transcription */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="text-center">
-          <span className="text-xs text-gray-400">Call started at 10:30 AM</span>
-        </div>
-        
-        {MOCK_TRANSCRIPTION.map((line) => (
-          <div
-            key={line.id}
-            className={cn(
-              'flex gap-3',
-              line.speaker === 'operator' && 'flex-row-reverse'
-            )}
-          >
-            {/* Avatar */}
-            <div className={cn(
-              'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
-              line.speaker === 'customer' ? 'bg-indigo-100' : 'bg-emerald-100'
-            )}>
-              {line.speaker === 'customer' ? (
-                <User size={14} className="text-indigo-600" />
-              ) : (
-                <span className="text-xs font-bold text-emerald-600">OP</span>
-              )}
-            </div>
-
-            {/* Message */}
-            <div className={cn(
-              'max-w-[75%]',
-              line.speaker === 'operator' && 'text-right'
-            )}>
-              <div className={cn(
-                'inline-block px-4 py-2 rounded-2xl text-sm',
-                line.speaker === 'customer' 
-                  ? 'bg-gray-100 text-gray-800 rounded-tl-none' 
-                  : 'bg-indigo-600 text-white rounded-tr-none'
-              )}>
-                {line.text}
-              </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] text-gray-400">{line.timestamp}</span>
-                {line.speaker === 'customer' && line.emotion && (
-                  <span className={cn(
-                    'text-[10px] px-1.5 py-0.5 rounded-full',
-                    line.emotion === 'angry' && 'bg-rose-100 text-rose-600',
-                    line.emotion === 'frustrated' && 'bg-amber-100 text-amber-600',
-                    line.emotion === 'disappointed' && 'bg-gray-100 text-gray-600',
-                  )}>
-                    {line.emotion}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {/* Typing indicator */}
-        {isCallActive && !isPaused && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-              <User size={14} className="text-indigo-600" />
-            </div>
-            <div className="bg-gray-100 rounded-2xl rounded-tl-none px-4 py-3">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <LiveKitTranscript
+        transcripts={transcripts}
+        isCallActive={isConnected}
+        isPaused={isPaused}
+      />
 
       {/* Quick Actions */}
       <div className="p-4 border-t border-gray-200 bg-gray-50">
@@ -589,7 +549,7 @@ const TranscriptionPanel = memo(() => {
     </div>
   );
 });
-TranscriptionPanel.displayName = 'TranscriptionPanel';
+LiveCallPanel.displayName = 'LiveCallPanel';
 
 // ============================================
 // MAIN PAGE COMPONENT
@@ -687,9 +647,12 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
             <span className="text-sm font-medium">Exit Practice</span>
           </button>
           <div className="h-6 w-px bg-gray-200" />
-          <div>
-            <h1 className="text-sm font-semibold text-gray-900">{scenario.title}</h1>
-            <p className="text-xs text-gray-500">Training Simulation • {scenario.persona}</p>
+          <div className="flex items-center gap-2">
+            <Wifi size={16} className="text-emerald-500" />
+            <div>
+              <h1 className="text-sm font-semibold text-gray-900">{scenario.title}</h1>
+              <p className="text-xs text-gray-500">Live Training • {scenario.persona}</p>
+            </div>
           </div>
         </div>
 
@@ -715,9 +678,9 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
           <CustomerDataPanel />
         </div>
 
-        {/* Section 2: Call Transcription (Center Panel - Flexible) */}
+        {/* Section 2: Live Call Panel (Center Panel - Flexible) */}
         <div className="flex-1 min-w-0">
-          <TranscriptionPanel />
+          <LiveCallPanel scenarioId={scenarioId!} scenario={scenario} />
         </div>
 
         {/* Section 3: Axtra Copilot (Right Panel - 320px) */}

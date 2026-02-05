@@ -17,7 +17,7 @@ npm install
 
 # Setup environment
 cp .env.local.example .env.local
-# Edit .env.local with your Turso credentials
+# Edit .env.local with your credentials (Turso + LiveKit)
 
 # Start dev server
 npm run dev
@@ -35,6 +35,7 @@ npm test -- --run
 - **Dashboard** - Real-time KPIs, skill velocity, QA highlights
 - **Training Simulations** - AI-powered practice scenarios
 - **Active Call Interface** - 3-panel call coaching view
+- **Voice AI Calls** - Real-time voice conversations with AI agents via LiveKit
 
 ### 🏗️ Tech Stack
 
@@ -46,6 +47,7 @@ npm test -- --run
 | **State** | Zustand v5 |
 | **Backend** | Node.js HTTP Server |
 | **Database** | Turso (libsql) - Serverless SQLite |
+| **Voice/Video** | LiveKit (WebRTC) |
 | **Testing** | Vitest, React Testing Library |
 
 ---
@@ -127,10 +129,18 @@ Interactive training platform with AI coaching:
 
 ### Features
 - 8 training scenarios (Billing, Technical, Sales, Compliance, etc.)
+- **Live Voice AI** - Real-time voice conversations with AI agents
 - Real-time emotion analysis
 - AI suggestions and scripts
 - Progress tracking
-- Call transcription simulation
+- Call transcription
+
+### Voice AI Integration
+Uses **LiveKit** for real-time voice communication:
+- WebRTC audio streaming
+- AI agent auto-joins rooms
+- 8 different customer personas with unique voices
+- GPT-4o Realtime API for natural conversations
 
 ### 3-Panel Call Interface
 1. **Left** - Customer Data (profile, contract, history)
@@ -165,6 +175,7 @@ npm run test:coverage
 | [docs/design_system.md](docs/design_system.md) | Design principles |
 | [docs/style-guide.md](docs/style-guide.md) | Coding standards |
 | [AGENTS.md](AGENTS.md) | AI agent guide |
+| [LIVEKIT.md](docs/livekit.md) | LiveKit voice setup |
 
 ---
 
@@ -186,6 +197,11 @@ VITE_API_BASE_URL=http://localhost:3001/api
 TURSO_DATABASE_URL=libsql://your-db.turso.io
 TURSO_AUTH_TOKEN=your_token
 API_PORT=3001
+
+# LiveKit (for voice calls)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_key
+LIVEKIT_API_SECRET=your_secret
 ```
 
 ---

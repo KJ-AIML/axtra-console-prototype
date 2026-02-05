@@ -50,8 +50,11 @@ AI-Powered Call Center Training Platform with real-time coaching, simulation sce
   - Left: Customer Data Panel (profile, contract, call history)
   - Center: Live Call Transcription with controls
   - Right: Axtra Copilot (AI suggestions, emotion monitoring)
-- Real-time emotion analysis (mock cycling)
-- AI suggestions with priority levels
+- **Live Voice AI Integration** via LiveKit
+  - Real-time WebRTC voice calls
+  - AI Agent auto-joins rooms
+  - GPT-4o Realtime API for conversations
+  - 8 customer personas with unique voices
 - Call controls (mute, pause, end)
 - Quick action buttons
 
@@ -63,6 +66,8 @@ AI-Powered Call Center Training Platform with real-time coaching, simulation sce
 - Turso (libsql) database
 - Vitest 4 + React Testing Library (67 tests passing)
 - Custom HTTP server integrated with Vite dev server
+- **LiveKit WebRTC** for voice calls
+- **OpenAI GPT-4o Realtime** integration (via external agent service)
 
 ---
 
@@ -96,8 +101,9 @@ Test Coverage:
 - Post-call summary page
 - Performance history
 
-### Phase 3: Active Calls (Real)
-- Live call monitoring dashboard
+### Phase 3: Active Calls (Real) ✅ COMPLETE
+- ✅ LiveKit WebRTC voice calls
+- ✅ AI Agent voice conversations
 - Real-time transcription
 - Supervisor monitoring
 
@@ -135,6 +141,11 @@ Create `.env.local`:
 ```
 TURSO_DATABASE_URL=libsql://your-database.turso.io
 TURSO_AUTH_TOKEN=your-auth-token
+
+# LiveKit (for voice calls)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
 ```
 
 ---
@@ -147,7 +158,8 @@ TURSO_AUTH_TOKEN=your-auth-token
 │   ├── db.ts            # Database schema & connection
 │   ├── auth.ts          # Authentication service
 │   ├── simulations.ts   # Training scenarios service
-│   └── dashboard.ts     # Dashboard data service
+│   ├── dashboard.ts     # Dashboard data service
+│   └── livekit.ts       # LiveKit token generation
 ├── src/
 │   ├── components/      # React components
 │   ├── pages/           # Page components
@@ -183,6 +195,11 @@ TURSO_AUTH_TOKEN=your-auth-token
 - Turso (libsql) - SQLite for production
 - Tables: users, sessions, accounts, scenarios, user_scenarios, user_metrics, skill_velocity, qa_highlights
 
+### Voice/Video
+- LiveKit Cloud (WebRTC)
+- AI Agent service (separate, connects to rooms)
+- OpenAI GPT-4o Realtime API
+
 ---
 
-*Last updated: 2026-02-04*
+*Last updated: 2026-02-05*

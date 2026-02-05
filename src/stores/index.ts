@@ -6,6 +6,8 @@ export { useDashboardDataStore } from './useDashboardDataStore';
 export { useSimulationStore } from './useSimulationStore';
 export { useToastStore, showSuccess, showError, showWarning, showInfo } from './useToastStore';
 export type { Toast, ToastType } from './useToastStore';
+export { useLiveKitStore } from './useLiveKitStore';
+export type { TranscriptEntry } from './useLiveKitStore';
 export type {
   UserMetric,
   Scenario as DashboardScenario,

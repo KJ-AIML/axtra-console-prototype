@@ -30,6 +30,7 @@ Essential information for AI coding agents working on the Axtra Console project.
 | **State** | Zustand v5 |
 | **Backend** | Node.js HTTP server |
 | **Database** | Turso (libsql) |
+| **Voice AI** | LiveKit Agents + OpenAI GPT-4o Realtime |
 | **Testing** | Vitest |
 
 ---
@@ -52,7 +53,8 @@ axtra-console-prototype/
 │   ├── db.ts                 # Database
 │   ├── auth.ts               # Auth service
 │   ├── dashboard.ts          # Dashboard data
-│   └── simulations.ts        # Simulation service
+│   ├── simulations.ts        # Simulation service
+│   └── livekit.ts            # LiveKit token generation
 └── docs/                     # Documentation
 ```
 
@@ -221,6 +223,14 @@ VITE_API_BASE_URL=http://localhost:3001/api
 TURSO_DATABASE_URL=libsql://axdb-kjctsc.aws-ap-south-1.turso.io
 TURSO_AUTH_TOKEN=your_token_here
 API_PORT=3001
+
+# LiveKit (for voice calls)
+LIVEKIT_API_KEY=your_livekit_key
+LIVEKIT_API_SECRET=your_livekit_secret
+LIVEKIT_URL=wss://your-project.livekit.cloud
+
+# OpenAI (for AI voice agent)
+OPENAI_API_KEY=sk-your_openai_key
 ```
 
 **Never commit `.env.local` to git!**
@@ -256,6 +266,8 @@ API_PORT=3001
 | "Database error" | Verify `TURSO_AUTH_TOKEN` in `.env.local` |
 | "Module not found" | Run `npm install` |
 | Tests failing | Check mock setup in test files |
+| "No voice response" | Check LiveKit room connection and microphone permissions |
+| "Agent not joining" | Verify AI agent service is running separately |
 
 ---
 
@@ -265,3 +277,112 @@ API_PORT=3001
 - [Architecture](./docs/architecture.md)
 - [Design System](./docs/design_system.md)
 - [README](./README.md)
+
+---
+
+## AI Voice Agent Integration
+
+The AI Voice Agent provides realistic customer simulations for call center training using LiveKit and OpenAI's GPT-4o Realtime API.
+
+### Architecture
+
+```
+┌─────────────┐      WebRTC        ┌──────────────────┐      WebRTC       ┌─────────────┐
+│   Client    │◄──────────────────►│  LiveKit Cloud   │◄─────────────────►│  AI Agent   │
+│  (Browser)  │   (Voice/Audio)    │    (SFU/Media)   │   (Voice/Audio)  │  (External) │
+└─────────────┘                    └────────┬─────────┘                  └─────────────┘
+       │                                    │
+       │  1. Get token                      │
+       │  2. Connect room                   │  3. Agent auto-joins
+       │  3. Enable mic                     │  4. Voice conversation
+       │  4. Subscribe audio                │
+       ▼                                    ▼
+┌─────────────┐                      ┌──────────────────┐
+│  React App  │                      │   Token API      │
+│  - useLive  │                      │   - Generates    │
+│    KitStore │                      │    JWT tokens    │
+│  - Audio    │                      │   - /livekit/    │
+│    controls │                      │    token         │
+└─────────────┘                      └──────────────────┘
+```
+
+> **Note:** The AI Agent runs as a **separate service** (not part of this repo). It connects to LiveKit rooms automatically when users join.
+
+### Available Personas
+
+| Scenario | Persona | Difficulty | Description |
+|----------|---------|------------|-------------|
+| Billing Dispute | Angry Customer | Hard | Aggressive, impatient, disputing charges |
+| Technical Support | Frustrated Senior | Medium | Tech issues, work-from-home impact |
+| Sales Upsell | Interested Customer | Easy | Curious, budget-conscious, no pressure |
+| Retention | Canceling Customer | Medium | Disappointed, competitor offers |
+| Compliance | Suspicious Caller | Hard | Privacy-focused, security verification |
+| Returns | Upset Customer | Easy | Damaged goods, wants quick resolution |
+| VIP Support | Premium Customer | Medium | High expectations, white-glove service |
+| Fraud Alert | Panicked Customer | Hard | Anxious, needs immediate action |
+
+### How It Works
+
+1. **Room Naming Convention**: Rooms are named `axtra-{scenarioId}-{userId}-{timestamp}`
+2. **Persona Selection**: The agent parses the room name to determine which persona to use
+3. **Initial Greeting**: Each persona has a unique opening line matching their personality
+4. **Real-time Conversation**: Uses OpenAI GPT-4o Realtime API for natural voice conversations
+5. **Voice Configuration**: Each persona has a distinct voice and speaking speed
+
+### How It Works
+
+1. **Frontend (This Repo)**
+   - User clicks "Start Voice Call"
+   - Frontend requests token from `/api/livekit/token`
+   - Connects to LiveKit room using `livekit-client`
+   - Enables microphone and subscribes to audio tracks
+
+2. **AI Agent (External Service)**
+   - Monitors LiveKit rooms
+   - Auto-joins when new room created
+   - Uses GPT-4o Realtime API for voice conversations
+   - Each scenario has unique persona (voice, personality)
+
+### Environment Variables
+
+Frontend needs these in `.env`:
+
+```bash
+# LiveKit Configuration (required for voice calls)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_api_key
+LIVEKIT_API_SECRET=your_api_secret
+
+# API Server Port
+API_PORT=3001
+```
+
+> The AI Agent service (run separately) needs its own `OPENAI_API_KEY`
+
+### Available Personas (Agent-Side)
+
+The AI Agent service (run separately) has these personas:
+
+| Scenario | Persona | Voice | Difficulty |
+|----------|---------|-------|------------|
+| Billing Dispute | Angry Customer | ash | Hard |
+| Technical Support | Frustrated User | echo | Medium |
+| Sales Upsell | Interested Customer | coral | Easy |
+| Retention | Canceling Customer | sage | Medium |
+| Compliance/Privacy | Suspicious Caller | alloy | Hard |
+| Returns | Upset Customer | ballad | Easy |
+| VIP Support | Premium Customer | shimmer | Medium |
+| Fraud Alert | Panicked Customer | verse | Hard |
+
+> To add new personas, modify the **AI Agent service** (not this frontend repo)
+
+### Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `LIVEKIT_API_KEY` | LiveKit project API key | Yes |
+| `LIVEKIT_API_SECRET` | LiveKit project secret | Yes |
+| `LIVEKIT_URL` | LiveKit WebSocket URL | Yes |
+| `OPENAI_API_KEY` | OpenAI API key for GPT-4o | Yes |
+| `NODE_ENV` | Set to `production` for production | No |
+| `DEBUG` | Set to `true` for debug logging | No |
