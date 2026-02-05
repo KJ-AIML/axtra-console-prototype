@@ -41,12 +41,19 @@ Essential information for AI coding agents working on the Axtra Console project.
 axtra-console-prototype/
 ├── src/                      # Frontend
 │   ├── components/           # UI components
+│   │   └── livekit/          # LiveKit voice components
+│   │       ├── LiveKitTranscript.tsx
+│   │       ├── LiveKitCallControls.tsx
+│   │       └── LiveKitWelcomeScreen.tsx
 │   ├── pages/                # Route pages
+│   │   └── ActiveSimulation.tsx
 │   ├── stores/               # Zustand stores
 │   │   ├── useUserStore.ts       # Auth state
 │   │   ├── useSimulationStore.ts
-│   │   └── useDashboardDataStore.ts
-│   ├── lib/                  # API client
+│   │   ├── useDashboardDataStore.ts
+│   │   └── useLiveKitStore.ts    # Voice call + transcription
+│   ├── lib/                  # API client & utilities
+│   │   └── livekit.ts
 │   └── App.tsx               # Main app
 ├── server/                   # Backend
 │   ├── index.ts              # API server
@@ -113,6 +120,9 @@ await db.execute({
 - `POST /api/scenarios/:id/complete` - Complete
 - `GET /api/simulations/stats` - User stats
 - `GET /api/simulations/recommended` - Recommended
+
+### LiveKit
+- `POST /api/livekit/token` - Generate JWT token for room access
 
 ---
 
@@ -268,6 +278,7 @@ OPENAI_API_KEY=sk-your_openai_key
 | Tests failing | Check mock setup in test files |
 | "No voice response" | Check LiveKit room connection and microphone permissions |
 | "Agent not joining" | Verify AI agent service is running separately |
+| "Transcription not showing" | Check Agent has STT enabled in its configuration |
 
 ---
 
@@ -282,7 +293,7 @@ OPENAI_API_KEY=sk-your_openai_key
 
 ## AI Voice Agent Integration
 
-The AI Voice Agent provides realistic customer simulations for call center training using LiveKit and OpenAI's GPT-4o Realtime API.
+The AI Voice Agent provides realistic customer simulations for call center training using LiveKit and OpenAI's GPT-4o Realtime API. Features include real-time voice calls with streaming transcription display.
 
 ### Architecture
 
@@ -290,23 +301,102 @@ The AI Voice Agent provides realistic customer simulations for call center train
 ┌─────────────┐      WebRTC        ┌──────────────────┐      WebRTC       ┌─────────────┐
 │   Client    │◄──────────────────►│  LiveKit Cloud   │◄─────────────────►│  AI Agent   │
 │  (Browser)  │   (Voice/Audio)    │    (SFU/Media)   │   (Voice/Audio)  │  (External) │
-└─────────────┘                    └────────┬─────────┘                  └─────────────┘
+└──────┬──────┘                    └────────┬─────────┘                  └─────────────┘
        │                                    │
-       │  1. Get token                      │
-       │  2. Connect room                   │  3. Agent auto-joins
-       │  3. Enable mic                     │  4. Voice conversation
+       │  1. Get token                      │  3. Agent auto-joins
+       │  2. Connect room                   │  4. Voice conversation  
+       │  3. Enable mic                     │  5. STT → Text Stream
        │  4. Subscribe audio                │
-       ▼                                    ▼
-┌─────────────┐                      ┌──────────────────┐
-│  React App  │                      │   Token API      │
-│  - useLive  │                      │   - Generates    │
-│    KitStore │                      │    JWT tokens    │
-│  - Audio    │                      │   - /livekit/    │
-│    controls │                      │    token         │
-└─────────────┘                      └──────────────────┘
+       │  5. Receive transcription ◄────────┘
+       ▼                                    
+┌─────────────────────────────────────────────────────────┐
+│  React App                                              │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  useLiveKitStore                                 │  │
+│  │  - Room connection                               │  │
+│  │  - Audio controls                                │  │
+│  │  - Transcript array (streaming)                  │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  TranscriptionSync Component                     │  │
+│  │  - useTranscriptions hook                        │  │
+│  │  - Maps segments to speakers                     │  │
+│  │  - Updates store in real-time                    │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  LiveKitTranscript Component                     │  │
+│  │  - Displays streaming text                       │  │
+│  │  - Separate sides (customer/operator)            │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
 ```
 
 > **Note:** The AI Agent runs as a **separate service** (not part of this repo). It connects to LiveKit rooms automatically when users join.
+
+### Real-Time Transcription
+
+The system captures and displays speech-to-text in real-time:
+
+1. **Agent performs STT** - The AI Agent uses LiveKit's transcription feature to convert speech to text
+2. **Text streams via LiveKit** - Transcriptions are sent as text streams with segment IDs
+3. **Frontend receives streams** - Uses `useTranscriptions` hook from `@livekit/components-react`
+4. **Streaming display** - Text appears character-by-character in the same bubble until the segment completes
+5. **Speaker separation** - Messages are shown on different sides based on speaker (Agent=customer/left, User=operator/right)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/stores/useLiveKitStore.ts` | Room state, transcript array, add/update transcript actions |
+| `src/pages/ActiveSimulation.tsx` | Main page with `TranscriptionSync` component |
+| `src/components/livekit/LiveKitTranscript.tsx` | UI component displaying transcripts |
+| `server/index.ts` | LiveKit token generation endpoint |
+
+### Transcription Data Flow
+
+```
+Speech → LiveKit Agent STT → Text Stream (lk.transcription)
+                                    ↓
+                           useTranscriptions hook
+                                    ↓
+                           TranscriptionSync component
+                           - Maps segment_id to store index
+                           - Determines speaker (local vs remote)
+                           - Calls addTranscript() or updateTranscript()
+                                    ↓
+                           LiveKitTranscript component
+                           - Renders with speaker side layout
+                           - Updates existing bubble (streaming effect)
+```
+
+### Implementation Details
+
+**TranscriptEntry Interface:**
+```typescript
+export interface TranscriptEntry {
+  id: string;
+  speaker: 'customer' | 'operator';
+  text: string;
+  timestamp: string;
+  emotion?: string;
+}
+```
+
+**Store Actions:**
+```typescript
+// Add new transcript (when new segment starts)
+addTranscript: (entry: Omit<TranscriptEntry, 'id'>) => void;
+
+// Update existing transcript (for streaming updates)
+updateTranscript: (index: number, text: string) => void;
+```
+
+**Speaker Detection:**
+```typescript
+// Compare participant identity with local participant
+const isLocal = participantIdentity === room.localParticipant.identity;
+const speaker: 'customer' | 'operator' = isLocal ? 'operator' : 'customer';
+```
 
 ### Available Personas
 
@@ -336,11 +426,13 @@ The AI Voice Agent provides realistic customer simulations for call center train
    - Frontend requests token from `/api/livekit/token`
    - Connects to LiveKit room using `livekit-client`
    - Enables microphone and subscribes to audio tracks
+   - Displays real-time transcription from agent
 
 2. **AI Agent (External Service)**
    - Monitors LiveKit rooms
    - Auto-joins when new room created
    - Uses GPT-4o Realtime API for voice conversations
+   - Performs STT and streams transcriptions
    - Each scenario has unique persona (voice, personality)
 
 ### Environment Variables
