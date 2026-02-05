@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { Room, RoomEvent, ConnectionState, Track } from 'livekit-client';
+import { Room, RoomEvent, ConnectionState } from 'livekit-client';
 import {
   fetchLiveKitToken,
   createLiveKitRoom,
@@ -51,6 +51,7 @@ interface LiveKitState {
   togglePause: () => void;
   startAudio: () => Promise<void>;
   addTranscript: (entry: Omit<TranscriptEntry, 'id'>) => void;
+  updateTranscript: (index: number, text: string) => void;
 }
 
 let durationInterval: NodeJS.Timeout | null = null;
@@ -128,6 +129,37 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
         },
       });
       
+      // Listen for data messages (transcription from agent)
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant?: any) => {
+        try {
+          const data = JSON.parse(new TextDecoder().decode(payload));
+          console.log('[LiveKit] Data received:', data);
+          
+          if (data.type === 'transcript') {
+            const { transcripts } = get();
+            const newEntry: TranscriptEntry = {
+              id: `${Date.now()}-${transcripts.length}`,
+              speaker: data.speaker as 'customer' | 'operator',
+              text: data.text,
+              timestamp: formatDuration(get().callDuration),
+              emotion: data.emotion,
+            };
+            set({ transcripts: [...transcripts, newEntry] });
+          }
+        } catch (e) {
+          console.error('[LiveKit] Failed to parse data message:', e);
+        }
+      });
+      
+      // Listen for transcription metadata on tracks (if available)
+      room.on(RoomEvent.TrackTranscriptionStarted, (track, participant) => {
+        console.log('[LiveKit] Transcription started for track:', track.kind);
+      });
+      
+      room.on(RoomEvent.TrackTranscriptionFailed, (track, error) => {
+        console.error('[LiveKit] Transcription failed:', error);
+      });
+      
       // 4. Connect to room
       await connectToRoom(room, url, token);
       
@@ -193,6 +225,7 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       callDuration: 0,
       transcripts: [],
       connectionError: null,
+
     });
   },
 
@@ -203,6 +236,8 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
     
     const newState = await toggleMicrophone(room);
     set({ isMuted: !newState }); // toggleMicrophone returns new enabled state
+    
+
   },
 
   // Toggle pause
@@ -232,5 +267,15 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       id: `${Date.now()}-${transcripts.length}`,
     };
     set({ transcripts: [...transcripts, newEntry] });
+  },
+
+  // Update transcript at index (for streaming)
+  updateTranscript: (index, text) => {
+    const { transcripts } = get();
+    if (index < 0 || index >= transcripts.length) return;
+    
+    const updated = [...transcripts];
+    updated[index] = { ...updated[index], text };
+    set({ transcripts: updated });
   },
 }));

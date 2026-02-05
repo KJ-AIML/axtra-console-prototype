@@ -1,6 +1,6 @@
 /**
  * LiveKit Transcript Component
- * Displays real-time call transcription
+ * Displays real-time call transcription from LiveKit
  */
 
 import { memo, useRef, useEffect } from 'react';

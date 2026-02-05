@@ -1,8 +1,13 @@
+/**
+ * Active Simulation Page
+ * 3-panel layout: Customer Data | Live Call | AI Analysis
+ */
+
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../utils/classnames';
 import { apiClient } from '../lib/api-client';
-import { useLiveKitStore, showError, showSuccess } from '../stores';
+import { useLiveKitStore, showError, showSuccess, type TranscriptEntry } from '../stores';
 import {
   LiveKitCallControls,
   LiveKitTranscript,
@@ -10,11 +15,13 @@ import {
   LiveKitWelcomeScreen,
 } from '../components/livekit';
 import { formatDuration } from '../lib/livekit';
+import { useTranscriptions } from '@livekit/components-react';
+import type { Room } from 'livekit-client';
 import { 
-  Phone, PhoneOff, ArrowLeft, User, Clock, Calendar, 
+  ArrowLeft, User, Clock, Calendar, 
   FileText, History, TrendingUp, AlertCircle, CheckCircle, 
-  Lightbulb, MessageSquare, Smile, Frown, Meh, Zap, Shield, 
-  ChevronRight, Volume2, MoreHorizontal, Loader2, Wifi, WifiOff
+  Lightbulb, MessageSquare, Smile, Frown, Meh, Zap, 
+  ChevronRight, MoreHorizontal, Loader2, Wifi, WifiOff
 } from 'lucide-react';
 
 // ============================================
@@ -161,11 +168,11 @@ const CustomerDataPanel = memo(() => {
               <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Contact</h4>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
-                  <Phone size={14} className="text-gray-400" />
+                  <span className="text-gray-400">📞</span>
                   <span className="text-gray-700">{MOCK_CUSTOMER.phone}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <MessageSquare size={14} className="text-gray-400" />
+                  <span className="text-gray-400">✉️</span>
                   <span className="text-gray-700">{MOCK_CUSTOMER.email}</span>
                 </div>
               </div>
@@ -420,6 +427,7 @@ interface LiveCallPanelProps {
 
 const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   const {
+    room,
     isConnected,
     isConnecting,
     isMuted,
@@ -493,6 +501,9 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
 
   return (
     <div className="h-full flex flex-col bg-white border-l border-r border-gray-200">
+      {/* Transcription Sync - only when room exists */}
+      {room && <TranscriptionSync room={room} callDuration={callDuration} />}
+      
       {/* Call Header */}
       <div className="p-4 border-b border-gray-200">
         <LiveKitConnectionStatus
@@ -550,6 +561,70 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   );
 });
 LiveCallPanel.displayName = 'LiveCallPanel';
+
+// ============================================
+// COMPONENT: Transcription Sync (handles LiveKit transcription streaming)
+// ============================================
+
+interface TranscriptionSyncProps {
+  room: Room | null;
+  callDuration: number;
+}
+
+const TranscriptionSync = memo<TranscriptionSyncProps>(({ room, callDuration }) => {
+  const { transcripts, addTranscript, updateTranscript } = useLiveKitStore();
+  
+  // Get transcriptions from LiveKit (includes both agent and user)
+  const livekitTranscriptions = useTranscriptions(room ? { room } : undefined);
+  
+  // Track which segment IDs we've seen and their store index
+  const segmentMap = useRef<Map<string, number>>(new Map());
+
+  // Reset when room changes (new call)
+  useEffect(() => {
+    segmentMap.current.clear();
+  }, [room]);
+
+  // Process streaming transcriptions
+  useEffect(() => {
+    if (!livekitTranscriptions?.length || !room) return;
+    
+    const localIdentity = room.localParticipant.identity;
+    
+    livekitTranscriptions.forEach((transcription) => {
+      const segmentId = transcription.streamInfo?.attributes?.['lk.segment_id'] || 
+                        transcription.streamInfo?.id;
+      const text = transcription.text || '';
+      
+      if (!segmentId) return;
+      
+      // Determine speaker by comparing with local participant
+      const participantIdentity = transcription.participantInfo?.identity;
+      const isLocal = participantIdentity === localIdentity;
+      const speaker: 'customer' | 'operator' = isLocal ? 'operator' : 'customer';
+      
+      const existingIndex = segmentMap.current.get(segmentId);
+      
+      if (existingIndex !== undefined) {
+        // Update existing transcript (streaming in progress)
+        updateTranscript(existingIndex, text);
+      } else {
+        // New segment - add to store
+        const newIndex = transcripts.length;
+        segmentMap.current.set(segmentId, newIndex);
+        
+        addTranscript({
+          speaker,
+          text,
+          timestamp: formatDuration(callDuration),
+        });
+      }
+    });
+  }, [livekitTranscriptions, room, callDuration, transcripts.length, addTranscript, updateTranscript]);
+
+  return null;
+});
+TranscriptionSync.displayName = 'TranscriptionSync';
 
 // ============================================
 // MAIN PAGE COMPONENT
