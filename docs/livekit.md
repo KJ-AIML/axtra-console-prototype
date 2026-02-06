@@ -7,20 +7,24 @@ This guide explains how the Axtra Console integrates with LiveKit for real-time 
 ## Architecture Overview
 
 ```
-┌─────────────────┐         ┌──────────────────┐         ┌─────────────────┐
-│   React Client  │  ←───→  │   LiveKit Cloud  │  ←───→  │   AI Agent      │
-│   (Browser)     │  WebRTC │   (Media Relay)  │  WebRTC │   (External)    │
-│                 │         │                  │         │                 │
-│ • Get token     │         │ • Route audio    │         │ • Auto-join     │
-│ • Connect room  │         │ • Handle streams │         │ • GPT-4o        │
-│ • Enable mic    │         │                  │         │ • Voice output  │
-│ • Play audio    │         │                  │         │                 │
-└─────────────────┘         └──────────────────┘         └─────────────────┘
+┌─────────────────┐         ┌──────────────────┐         ┌─────────────────────────┐
+│   React Client  │  ←───→  │   LiveKit Cloud  │  ←───→  │   Python AI Agent       │
+│   (Browser)     │  WebRTC │   (Media Relay)  │  WebRTC │   (Separate Service)    │
+│                 │         │                  │         │                         │
+│ • Get token     │         │ • Route audio    │         │ • Auto-joins rooms      │
+│ • Connect room  │         │ • Handle streams │         │ • Google Gemini Realtime│
+│ • Enable mic    │         │                  │         │ • STT + LLM + TTS       │
+│ • Play audio    │         │                  │         │ • Persona-based AI      │
+└─────────────────┘         └──────────────────┘         └─────────────────────────┘
+         ↑                                                        ↑
+         │         Node.js API (Token Generation)                 │
+         └────────────────────────────────────────────────────────┘
 ```
 
 **Key Points:**
 - **Frontend** uses `livekit-client` (browser SDK)
-- **AI Agent** runs as separate service using `@livekit/agents`
+- **Python AI Agent** runs as separate service using `livekit-agents` framework
+- **Node.js API** generates JWT tokens for room access
 - Both connect to same LiveKit room via WebRTC
 - Audio flows: User → LiveKit → Agent → LiveKit → User
 
@@ -30,7 +34,7 @@ This guide explains how the Axtra Console integrates with LiveKit for real-time 
 
 ### Environment Variables
 
-Add these to `.env.local`:
+#### Frontend & Node.js API (`.env.local` in project root)
 
 ```bash
 # LiveKit Configuration (required for voice calls)
@@ -39,7 +43,25 @@ LIVEKIT_API_KEY=your_api_key_here
 LIVEKIT_API_SECRET=your_api_secret_here
 ```
 
-Get credentials from [LiveKit Cloud](https://cloud.livekit.io/).
+#### Python AI Agent (`server/agent/python-livekit/.env`)
+
+```bash
+# LiveKit Configuration (same credentials)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_api_key_here
+LIVEKIT_API_SECRET=your_api_secret_here
+
+# Google Gemini Configuration (Required)
+GOOGLE_API_KEY=your_google_api_key
+
+# Optional: Other providers
+OPENAI_API_KEY=your_openai_key
+DEEPGRAM_API_KEY=your_deepgram_key
+```
+
+Get credentials from:
+- **LiveKit Cloud**: https://cloud.livekit.io
+- **Google Gemini**: https://aistudio.google.com/app/apikey
 
 ---
 
@@ -130,19 +152,27 @@ const connect = async (scenarioId: string) => {
 npm run dev
 ```
 
-### Step 2: Start AI Agent (Separately)
+### Step 2: Start Python AI Agent (Required for Voice)
 
-The AI Agent runs as a separate service. You have two options:
+The AI Agent is a **Python service** located in `server/agent/python-livekit/`. It must be running for voice calls to work.
 
-**Option A: Use LiveKit Playground**
-- Go to [LiveKit Playground](https://playground.livekit.io/)
-- Connect to your project
-- Test voice calls
+```bash
+# Navigate to agent directory
+cd server/agent/python-livekit
 
-**Option B: Run Your Own Agent**
-- The AI Agent code is in a separate repository/service
-- It connects to LiveKit and uses GPT-4o Realtime API
-- Must be running for voice calls to work
+# Install dependencies (using uv)
+uv sync
+
+# Run the agent in development mode (auto-reload)
+uv run python livekit_basic_agent.py dev
+```
+
+**Requirements:**
+- Python 3.9+ (project uses 3.13.3)
+- [uv](https://github.com/astral-sh/uv) package manager
+- Environment variables configured in `.env`
+
+See [server/agent/python-livekit/README.md](../server/agent/python-livekit/README.md) for detailed setup instructions.
 
 ---
 
@@ -170,20 +200,59 @@ The AI Agent runs as a separate service. You have two options:
 
 ---
 
-## Available Personas
+## Persona System
 
-When the AI Agent joins, it selects a persona based on the scenario:
+The Python AI Agent uses **structured personas** defined in `server/agent/python-livekit/prompts.py`. Each persona includes:
 
-| Scenario | Persona | Voice | Style |
-|----------|---------|-------|-------|
-| Billing Dispute | Angry Customer | ash | Aggressive |
-| Technical Support | Frustrated User | echo | Stressed |
-| Sales Upsell | Interested Customer | coral | Curious |
-| Retention | Canceling Customer | sage | Disappointed |
-| Compliance | Suspicious Caller | alloy | Cautious |
-| Returns | Upset Customer | ballad | Frustrated |
-| VIP Support | Premium Customer | shimmer | Professional |
-| Fraud Alert | Panicked Customer | verse | Anxious |
+### Persona Structure
+
+```
+#Persona: [Name]
+[Character description and emotional state]
+
+#Profile Data
+- Customer identity, account info, history
+
+#Scenario Context
+[The specific issue causing the call]
+
+#Emotional State & Behavior Rules
+##Phase 1: Opening (0-30 seconds)
+- Initial behavior and opening lines
+- Emotional intensity
+
+##Phase 2: Escalation Triggers
+- Actions that make the customer angrier
+- Specific response patterns
+
+##Phase 3: De-escalation Points
+- Actions that calm the customer
+- Threshold for accepting resolution
+
+##Phase 4: Resolution Acceptance
+- Criteria for ending the call positively
+
+#Test Objectives
+[Skills trainees should demonstrate]
+
+#Constraints
+[Rules the AI must follow]
+```
+
+### Available Personas
+
+| Scenario | Persona | Difficulty | Language |
+|----------|---------|------------|----------|
+| Billing Dispute | Sarah Thompson (Angry Gold Tier) | Hard | Thai |
+| Technical Support | Frustrated Senior | Medium | English |
+| Sales Upsell | Interested Customer | Easy | English |
+| Retention | Canceling Customer | Medium | English |
+| Compliance | Suspicious Caller | Hard | English |
+| Returns | Upset Customer | Easy | English |
+| VIP Support | Premium Customer | Medium | English |
+| Fraud Alert | Panicked Customer | Hard | English |
+
+> **Note:** The current implementation uses **Sarah Thompson** (Thai billing dispute scenario). More personas can be added by editing `prompts.py`.
 
 ---
 

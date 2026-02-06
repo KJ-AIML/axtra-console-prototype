@@ -4,50 +4,74 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Browser (Client)                             │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  React 19 Components                                         │   │
-│  │  - Sidebar, Header, Dashboard, Pages                        │   │
-│  │  - Simulations, ActiveCall, Login                           │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│                         Browser (Client)                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  React 19 Components                                        │    │
+│  │  - Sidebar, Header, Dashboard, Pages                        │    │
+│  │  - Simulations, ActiveCall, Login                           │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
-│  ┌──────────────────────▼──────────────────────────────────────┐   │
-│  │  React Router DOM v7 (Routing)                              │   │
-│  │  - Protected routes, Auth guards                            │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  React Router DOM v7 (Routing)                              │    │
+│  │  - Protected routes, Auth guards                            │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
-│  ┌──────────────────────▼──────────────────────────────────────┐   │
-│  │  Zustand v5 (State Management)                              │   │
-│  │  - useUserStore (auth)                                      │   │
-│  │  - useSimulationStore (training)                            │   │
-│  │  - useDashboardDataStore (KPIs)                             │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  Zustand v5 (State Management)                              │    │
+│  │  - useUserStore (auth)                                      │    │
+│  │  - useSimulationStore (training)                            │    │
+│  │  - useDashboardDataStore (KPIs)                             │    │
+│  │  - useLiveKitStore (voice calls)                            │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
-│  ┌──────────────────────▼──────────────────────────────────────┐   │
-│  │  API Client                                                  │   │
-│  │  - Auth tokens, interceptors, error handling                │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  API Client                                                 │    │
+│  │  - Auth tokens, interceptors, error handling                │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │
 └─────────────────────────┼───────────────────────────────────────────┘
                           │
                           ▼ HTTP Requests
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Backend API (Node.js)                           │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  HTTP Server (port 3001)                                     │   │
-│  │  - Route matching, CORS, JSON parsing                       │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│                      Backend API (Node.js)                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  HTTP Server (port 3001)                                    │    │
+│  │  - Route matching, CORS, JSON parsing                       │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │ 
 │                         │                                           │
-│  ┌──────────────────────▼──────────────────────────────────────┐   │
-│  │  Services                                                    │   │
-│  │  - auth.ts (login, register, sessions)                      │   │
-│  │  - dashboard.ts (metrics, progress)                         │   │
-│  │  - simulations.ts (scenarios, progress)                     │   │
-│  └──────────────────────┬──────────────────────────────────────┘   │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  Services                                                   │    │
+│  │  - auth.ts (login, register, sessions)                      │    │
+│  │  - dashboard.ts (metrics, progress)                         │    │
+│  │  - simulations.ts (scenarios, progress)                     │    │
+│  │  - livekit.ts (token generation)                            │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
-│  ┌──────────────────────▼──────────────────────────────────────┐   │
-│  │  Database (Turso/libsql)                                     │   │
-│  │  - SQLite over HTTP, serverless                             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  Database (Turso/libsql)                                    │    │
+│  │  - SQLite over HTTP, serverless                             │    │
+│  └──────────────────────┬──────────────────────────────────────┘    │ 
+└─────────────────────────────────────────────────────────────────────┘
+                          │
+                          │ WebSocket (WebRTC)
+                          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      LiveKit Cloud (Media Relay)                    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  SFU (Selective Forwarding Unit)                            │    │
+│  │  - Routes audio/video between participants                  │    │
+│  │  - Handles room management                                  │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+                          ▲
+                          │ WebRTC
+┌─────────────────────────┼───────────────────────────────────────────┐
+│                      AI Agent (Python)                              │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  LiveKit Agents Framework                                   │    │
+│  │  - Auto-joins rooms when users connect                      │    │
+│  │  - Google Gemini Realtime API (STT + LLM + TTS)             │    │
+│  │  - Persona-based conversation behavior                      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -159,11 +183,13 @@ axtra-console-prototype/
 │   │   ├── useUserStore.ts       # Auth state
 │   │   ├── useSimulationStore.ts # Training state
 │   │   ├── useDashboardDataStore.ts
+│   │   ├── useLiveKitStore.ts    # Voice call state
 │   │   └── ...
 │   │
 │   ├── lib/                      # Utilities
 │   │   ├── api-client.ts         # HTTP client
-│   │   └── api-types.ts          # TypeScript types
+│   │   ├── api-types.ts          # TypeScript types
+│   │   └── livekit.ts            # LiveKit client
 │   │
 │   └── App.tsx                   # Main app
 │
@@ -173,7 +199,14 @@ axtra-console-prototype/
 │   ├── auth.ts                   # Auth service
 │   ├── dashboard.ts              # Dashboard service
 │   ├── simulations.ts            # Simulation service
-│   └── seed-demo.ts              # Demo data seeder
+│   ├── livekit.ts                # LiveKit token generation
+│   ├── seed-demo.ts              # Demo data seeder
+│   └── agent/                    # AI Agent services
+│       └── python-livekit/       # Python voice agent
+│           ├── livekit_basic_agent.py
+│           ├── prompts.py
+│           ├── pyproject.toml
+│           └── README.md
 │
 └── docs/                         # Documentation
 ```
