@@ -86,29 +86,31 @@ pip install -e ".[dev]"
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in this directory:
+Copy the example file and fill in your API keys:
 
 ```bash
-# LiveKit Configuration (Required)
+cp .env.example .env
+```
+
+Then edit `.env` with your actual credentials:
+
+```bash
+# Required: LiveKit Configuration
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 LIVEKIT_URL=wss://your-project.livekit.cloud
 
-# Google Gemini Configuration (Required)
+# Required: Google Gemini Configuration
 GOOGLE_API_KEY=your_google_api_key
 
-# Optional: Additional API keys for other providers
-OPENAI_API_KEY=your_openai_key
-DEEPGRAM_API_KEY=your_deepgram_key
-ELEVEN_API_KEY=your_elevenlabs_key
-
-# Development Settings
-LOG_LEVEL=INFO
-DEBUG_MODE=false
+# Optional: Other providers (OpenAI, Deepgram, ElevenLabs)
+# OPENAI_API_KEY=your_openai_key
+# DEEPGRAM_API_KEY=your_deepgram_key
+# ELEVEN_API_KEY=your_elevenlabs_key
 ```
 
-Get your API keys:
-- **LiveKit**: https://cloud.livekit.io
+**Get your API keys:**
+- **LiveKit**: https://cloud.livekit.io (create a project → Settings → Keys)
 - **Google Gemini**: https://aistudio.google.com/app/apikey
 
 ---
