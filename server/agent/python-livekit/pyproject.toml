@@ -11,6 +11,12 @@ dependencies = [
     "livekit-plugins-silero>=1.0.0",
     "livekit-plugins-turn-detector>=1.0.0",
     "python-dotenv>=1.0.0",
+    "pydantic>=2.12.5",
+    "langchain>=0.3.27",
+    "langgraph>=0.6.11",
+    "langchain-openai>=0.3.35",
+    "langchain-google-genai>=2.1.12",
+    "torch>=2.8.0",
 ]
 
 [project.optional-dependencies]
