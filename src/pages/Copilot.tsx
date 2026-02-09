@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { cn } from '../utils/classnames';
-import AxtraCopilot from '../components/livekit/AxtraCopilot';
+import { AxtraCopilot } from '../components/livekit/AxtraCopilot';
 
 interface CopilotPageProps {
   className?: string;

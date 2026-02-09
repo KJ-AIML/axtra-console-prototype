@@ -1,33 +1,30 @@
 /**
  * Active Simulation Page
- * 3-panel layout: Customer Data | Live Call | AI Analysis
+ * 3-panel layout: Customer Data | Live Call | AXTRA Copilot
  */
 
 import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../utils/classnames';
 import { apiClient } from '../lib/api-client';
-import { useLiveKitStore, showError, showSuccess, type TranscriptEntry } from '../stores';
+import { useLiveKitStore, showError, showSuccess } from '../stores';
 import {
   LiveKitCallControls,
   LiveKitTranscript,
   LiveKitConnectionStatus,
   LiveKitWelcomeScreen,
+  AxtraCopilot,
 } from '../components/livekit';
 import { formatDuration } from '../lib/livekit';
 import { useTranscriptions } from '@livekit/components-react';
 import type { Room } from 'livekit-client';
 import { 
   ArrowLeft, User, Clock, Calendar, 
-  FileText, History, TrendingUp, AlertCircle, CheckCircle, 
-  Lightbulb, MessageSquare, Smile, Frown, Meh, Zap, 
-  ChevronRight, MoreHorizontal, Loader2, Wifi, WifiOff,
-  Heart, Scale, Target, Sparkles, BrainCircuit,
-  ChevronDown, ChevronUp
+  ChevronRight, MoreHorizontal, Loader2, Wifi, WifiOff
 } from 'lucide-react';
 
 // ============================================
-// MOCK DATA (for customer and AI analysis)
+// MOCK DATA (for customer panel only)
 // ============================================
 
 const MOCK_CUSTOMER = {
@@ -82,30 +79,6 @@ const MOCK_CALL_HISTORY = [
     outcome: 'Resolved',
     sentiment: 'positive',
     summary: 'Customer upgraded to Premium Plus plan. Successfully processed upgrade.',
-  },
-];
-
-const MOCK_AI_SUGGESTIONS = [
-  {
-    id: 1,
-    type: 'suggestion',
-    priority: 'high',
-    message: 'Customer seems frustrated about recurring billing issues. Acknowledge previous calls and offer concrete solution.',
-    action: 'Reference call history and offer account credit.',
-  },
-  {
-    id: 2,
-    type: 'insight',
-    priority: 'medium',
-    message: 'Gold tier customer - eligible for premium support and waived fees.',
-    action: 'Offer fee waiver as goodwill gesture.',
-  },
-  {
-    id: 3,
-    type: 'warning',
-    priority: 'high',
-    message: 'Escalation risk detected. Customer mentioned "cancel service" twice.',
-    action: 'Use retention script and offer loyalty discount.',
   },
 ];
 
@@ -268,217 +241,6 @@ const CustomerDataPanel = memo(() => {
 CustomerDataPanel.displayName = 'CustomerDataPanel';
 
 // ============================================
-// COMPONENT: AI Analysis Panel (Right) - AXTRA Copilot
-// ============================================
-
-const AIAnalysisPanel = memo(() => {
-  const coachingData = useLiveKitStore((state) => state.coachingData);
-  const isConnected = useLiveKitStore((state) => state.isConnected);
-  const [expandedCard, setExpandedCard] = useState<number | null>(0);
-  const [isCopied, setIsCopied] = useState(false);
-
-  // Toggle card expansion
-  const toggleCard = (index: number) => {
-    setExpandedCard(expandedCard === index ? null : index);
-  };
-
-  // Copy script to clipboard
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  // Card icons and colors
-  const cardMeta = [
-    { icon: Heart, title: 'Emotion', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200' },
-    { icon: Scale, title: 'Leverage', color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200' },
-    { icon: Target, title: 'Strategy', color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-200' },
-  ];
-
-  // Status colors
-  const statusColors = {
-    danger: 'bg-rose-50 border-rose-200',
-    warning: 'bg-amber-50 border-amber-200',
-    success: 'bg-emerald-50 border-emerald-200',
-    info: 'bg-blue-50 border-blue-200',
-  };
-
-  const statusBadgeColors = {
-    danger: 'bg-rose-100 text-rose-700',
-    warning: 'bg-amber-100 text-amber-700',
-    success: 'bg-emerald-100 text-emerald-700',
-    info: 'bg-blue-100 text-blue-700',
-  };
-
-  // Empty state
-  if (!coachingData) {
-    return (
-      <div className="h-full flex flex-col bg-gray-50">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 bg-white">
-          <div className="flex items-center gap-2 mb-1">
-            <Zap size={16} className="text-indigo-600" />
-            <h3 className="font-semibold text-gray-900">AXTRA Copilot</h3>
-          </div>
-          <p className="text-xs text-gray-500">Real-time AI coaching</p>
-        </div>
-
-        {/* Empty State */}
-        <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
-          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4">
-            <BrainCircuit size={32} className="text-indigo-600" />
-          </div>
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">Waiting for conversation</h4>
-          <p className="text-xs text-gray-500 max-w-[200px]">
-            {isConnected 
-              ? 'Start speaking to receive real-time coaching insights'
-              : 'Connect to a call to activate AI coaching'
-            }
-          </p>
-          
-          {isConnected && (
-            <div className="mt-4 flex items-center gap-2 text-xs text-emerald-600">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              Listening...
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const { cards, script, analysisId, timestamp } = coachingData;
-  const analysisTime = new Date(timestamp).toLocaleTimeString();
-
-  return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
-            <Sparkles size={14} className="text-indigo-600" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">AXTRA Copilot</h3>
-            <p className="text-[10px] text-gray-500">
-              Analysis #{analysisId} • {analysisTime}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Coaching Cards */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {cards.map((card, index) => {
-          const meta = cardMeta[index] || cardMeta[2];
-          const Icon = meta.icon;
-          const isExpanded = expandedCard === index;
-
-          return (
-            <div
-              key={`${analysisId}-${index}`}
-              className={cn(
-                'rounded-xl border transition-all duration-200 overflow-hidden bg-white',
-                statusColors[card.status as keyof typeof statusColors] || statusColors.info,
-                isExpanded ? 'shadow-md' : 'shadow-sm'
-              )}
-            >
-              {/* Card Header */}
-              <button
-                onClick={() => toggleCard(index)}
-                className="w-full p-3 flex items-center gap-3 text-left"
-              >
-                <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', meta.bg)}>
-                  <Icon size={18} className={meta.color} />
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                      {meta.title}
-                    </span>
-                    <span className={cn(
-                      'px-1.5 py-0.5 rounded text-[9px] font-medium',
-                      statusBadgeColors[card.status as keyof typeof statusBadgeColors] || statusBadgeColors.info
-                    )}>
-                      {card.status}
-                    </span>
-                  </div>
-                  <h4 className="font-semibold text-gray-900 text-sm truncate mt-0.5">
-                    {card.title}
-                  </h4>
-                </div>
-                
-                {isExpanded ? (
-                  <ChevronUp size={16} className="text-gray-400 shrink-0" />
-                ) : (
-                  <ChevronDown size={16} className="text-gray-400 shrink-0" />
-                )}
-              </button>
-              
-              {/* Expanded Content */}
-              {isExpanded && (
-                <div className="px-3 pb-3 pt-0 border-t border-gray-100">
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      {card.detail}
-                    </p>
-                    <div className="bg-gray-50 rounded-lg p-2.5">
-                      <p className="text-[10px] font-medium text-gray-500 mb-1">Action:</p>
-                      <p className="text-xs text-gray-800">{card.action}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Suggested Script */}
-        {script.suggestion && (
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <MessageSquare size={14} className="text-indigo-600" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-900 text-sm">Suggested Response</h4>
-              </div>
-            </div>
-            
-            {script.summary && (
-              <div className="mb-2 text-xs text-gray-600 bg-white/50 rounded-lg p-2">
-                <span className="font-medium">Context:</span> {script.summary}
-              </div>
-            )}
-            
-            <div className="bg-white rounded-lg p-2.5 border border-indigo-100 shadow-sm">
-              <p className="text-xs text-gray-800 leading-relaxed">
-                {script.suggestion}
-              </p>
-            </div>
-            
-            <button
-              onClick={() => handleCopy(script.suggestion)}
-              className={cn(
-                'mt-2 w-full py-1.5 px-2 rounded-lg text-xs font-medium transition-colors',
-                isCopied 
-                  ? 'bg-emerald-100 text-emerald-700' 
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
-              )}
-            >
-              {isCopied ? 'Copied!' : 'Copy to Clipboard'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
-AIAnalysisPanel.displayName = 'AIAnalysisPanel';
-
-// ============================================
 // COMPONENT: Live Call Panel (Center)
 // ============================================
 
@@ -506,7 +268,6 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   } = useLiveKitStore();
 
   const [showWelcome, setShowWelcome] = useState(true);
-  const [step, setStep] = useState<'welcome' | 'connecting' | 'connected'>('welcome');
 
   // Cleanup on unmount
   useEffect(() => {
@@ -518,14 +279,11 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   // Handle start call
   const handleStartCall = useCallback(async () => {
     try {
-      setStep('connecting');
       await connect(scenarioId);
-      setStep('connected');
       setShowWelcome(false);
       showSuccess('Connected', 'Voice call started. The AI agent will join shortly.');
     } catch (err) {
       console.error('Failed to connect:', err);
-      setStep('welcome');
       showError('Connection failed', err instanceof Error ? err.message : 'Failed to connect to voice server');
     }
   }, [scenarioId, connect]);
@@ -539,7 +297,6 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   const handleEndCall = useCallback(() => {
     disconnect();
     setShowWelcome(true);
-    setStep('welcome');
     showSuccess('Call ended', 'Your practice session has been saved.');
   }, [disconnect]);
 
@@ -625,7 +382,7 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
 LiveCallPanel.displayName = 'LiveCallPanel';
 
 // ============================================
-// COMPONENT: Transcription Sync (handles LiveKit transcription streaming)
+// COMPONENT: Transcription Sync
 // ============================================
 
 interface TranscriptionSyncProps {
@@ -636,18 +393,13 @@ interface TranscriptionSyncProps {
 const TranscriptionSync = memo<TranscriptionSyncProps>(({ room, callDuration }) => {
   const { transcripts, addTranscript, updateTranscript } = useLiveKitStore();
   
-  // Get transcriptions from LiveKit (includes both agent and user)
   const livekitTranscriptions = useTranscriptions(room ? { room } : undefined);
-  
-  // Track which segment IDs we've seen and their store index
   const segmentMap = useRef<Map<string, number>>(new Map());
 
-  // Reset when room changes (new call)
   useEffect(() => {
     segmentMap.current.clear();
   }, [room]);
 
-  // Process streaming transcriptions
   useEffect(() => {
     if (!livekitTranscriptions?.length || !room) return;
     
@@ -660,7 +412,6 @@ const TranscriptionSync = memo<TranscriptionSyncProps>(({ room, callDuration }) 
       
       if (!segmentId) return;
       
-      // Determine speaker by comparing with local participant
       const participantIdentity = transcription.participantInfo?.identity;
       const isLocal = participantIdentity === localIdentity;
       const speaker: 'customer' | 'operator' = isLocal ? 'operator' : 'customer';
@@ -668,10 +419,8 @@ const TranscriptionSync = memo<TranscriptionSyncProps>(({ room, callDuration }) 
       const existingIndex = segmentMap.current.get(segmentId);
       
       if (existingIndex !== undefined) {
-        // Update existing transcript (streaming in progress)
         updateTranscript(existingIndex, text);
       } else {
-        // New segment - add to store
         const newIndex = transcripts.length;
         segmentMap.current.set(segmentId, newIndex);
         
@@ -715,7 +464,6 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch scenario from API
   useEffect(() => {
     const fetchScenario = async () => {
       if (!scenarioId) return;
@@ -820,9 +568,9 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
           <LiveCallPanel scenarioId={scenarioId!} scenario={scenario} />
         </div>
 
-        {/* Section 3: Axtra Copilot (Right Panel - 320px) */}
+        {/* Section 3: AXTRA Copilot (Right Panel - 320px) */}
         <div className="w-[320px] shrink-0 border-l border-gray-200">
-          <AIAnalysisPanel />
+          <AxtraCopilot />
         </div>
       </div>
     </div>
