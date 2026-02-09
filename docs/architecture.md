@@ -9,6 +9,7 @@
 │  │  React 19 Components                                        │    │
 │  │  - Sidebar, Header, Dashboard, Pages                        │    │
 │  │  - Simulations, ActiveCall, Login                           │    │
+│  │  - AxtraCopilot (Real-time coaching)                        │    │
 │  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
 │  ┌──────────────────────▼──────────────────────────────────────┐    │
@@ -21,7 +22,7 @@
 │  │  - useUserStore (auth)                                      │    │
 │  │  - useSimulationStore (training)                            │    │
 │  │  - useDashboardDataStore (KPIs)                             │    │
-│  │  - useLiveKitStore (voice calls)                            │    │
+│  │  - useLiveKitStore (voice + coaching data)                  │    │
 │  └──────────────────────┬──────────────────────────────────────┘    │
 │                         │                                           │
 │  ┌──────────────────────▼──────────────────────────────────────┐    │
@@ -52,7 +53,7 @@
 │  └──────────────────────┬──────────────────────────────────────┘    │ 
 └─────────────────────────────────────────────────────────────────────┘
                           │
-                          │ WebSocket (WebRTC)
+                          │ WebSocket (WebRTC) + Data Channel
                           ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      LiveKit Cloud (Media Relay)                    │
@@ -60,19 +61,173 @@
 │  │  SFU (Selective Forwarding Unit)                            │    │
 │  │  - Routes audio/video between participants                  │    │
 │  │  - Handles room management                                  │    │
+│  │  - Routes data channel messages                             │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
                           ▲
-                          │ WebRTC
+                          │ WebRTC + Data Channel
 ┌─────────────────────────┼───────────────────────────────────────────┐
 │                      AI Agent (Python)                              │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  LiveKit Agents Framework                                   │    │
-│  │  - Auto-joins rooms when users connect                      │    │
-│  │  - Google Gemini Realtime API (STT + LLM + TTS)             │    │
-│  │  - Persona-based conversation behavior                      │    │
+│  ┌──────────────────────▼──────────────────────────────────────┐    │
+│  │  Parallel Architecture                                      │    │
+│  │                                                             │    │
+│  │  ┌─────────────────────┐    ┌────────────────────────────┐  │    │
+│  │  │ Voice Agent         │    │ Supervisor (LangGraph)     │  │    │
+│  │  │                     │    │                            │  │    │
+│  │  │ Gemini Realtime API │    │  ┌──────────────────────┐  │  │    │
+│  │  │ - STT + LLM + TTS   │◄───│  │ Conversation Manager │  │  │    │
+│  │  │ - Persona behavior  │    │  └──────────────────────┘  │  │    │
+│  │  │                     │    │           ↓                │  │    │
+│  │  │ conversation_item_│    │  ┌──────────────────────┐  │  │    │
+│  │  │    added events   │───►│  │ 3-Card Analysis      │  │  │    │
+│  │  │    (Agent speech) │    │  │ - Card 1: Emotion    │  │  │    │
+│  │  └─────────────────────┘    │  │ - Card 2: Leverage   │  │  │    │
+│  │                             │  │ - Card 3: Strategy   │  │  │    │
+│  │  ┌─────────────────────┐    │  └──────────────────────┘  │  │    │
+│  │  │ User Input Handler  │    │           ↓                │  │    │
+│  │  │                     │◄───│  ┌──────────────────────┐  │  │    │
+│  │  │ user_input_transcribed│  │ │ Script Generator     │  │  │    │
+│  │  │    (Customer speech)│───►│  └──────────────────────┘  │  │    │
+│  │  └─────────────────────┘    │           ↓                │  │    │
+│  │                             │  LiveKit.publish_data()    │  │    │
+│  │                             └────────────────────────────┘  │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## AXTRA Copilot Architecture
+
+The real-time coaching system uses a **parallel architecture** with two concurrent processes:
+
+### Architecture Diagram
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          AXTRA Copilot System                               │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────────────────┐     ┌─────────────────────────────┐  │
+│  │     Main Voice Agent Process     │     │    Supervisor Process       │  │
+│  │                                  │     │                             │  │
+│  │  ┌──────────────────────────┐    │     │  ┌─────────────────────┐    │  │
+│  │  │ Google Gemini Realtime   │    │     │  │  Conversation       │    │  │
+│  │  │ - MultimodalModel        │    │     │  │  Manager            │    │  │
+│  │  │ - STT + LLM + TTS        │    │     │  │                     │    │  │
+│  │  └────────────┬─────────────┘    │     │  │ - Tracks turns      │    │  │
+│  │               │                  │     │  │ - Calculates triggers│   │  │
+│  │               ▼                  │     │  │ - Maintains buffer   │    │  │
+│  │  ┌──────────────────────────┐    │     │  └──────────┬──────────┘    │  │
+│  │  │ Event Handlers           │    │     │             │               │  │
+│  │  │                          │    │     │  Triggers → │               │  │
+│  │  │ user_input_transcribed   │────┼─────┼─────────────► (Queue)       │  │
+│  │  │   → Customer turn        │    │     │             │               │  │
+│  │  │                          │    │     │             ▼               │  │
+│  │  │ conversation_item_added  │────┼─────┼──► [Agent turn recorded]    │  │
+│  │  │   → Agent turn           │    │     │                             │  │
+│  │  └──────────────────────────┘    │     │  ┌─────────────────────┐    │  │
+│  │                                  │     │  │  LangGraph Workflow │    │  │
+│  └──────────────────────────────────┘     │  │                     │    │  │
+│                                            │  │ ┌───────┬───────┐   │    │  │
+│                                            │  │ │ Card1 │ Card2 │   │    │  │
+│                                            │  │ │ Card3 │ Script│   │    │  │
+│                                            │  │ └───┬───┴───┬───┘   │    │  │
+│                                            │  │     │Aggregator│     │    │  │
+│                                            │  │     └────┬─────┘     │    │  │
+│                                            │  │          │           │    │  │
+│                                            │  └──────────┼───────────┘    │  │
+│                                            │             │                │  │
+│                                            │             ▼                │  │
+│                                            │  publish_data(coaching_update) │  │
+│                                            │                             │  │
+└────────────────────────────────────────────┼─────────────────────────────┘  │
+                                             │                                │
+                                             ▼                                │
+                                  LiveKit Data Channel                       │
+                                             │                                │
+                                             ▼                                │
+                                  ┌─────────────────────┐                     │
+                                  │  Frontend           │                     │
+                                  │  AxtraCopilot.tsx   │                     │
+                                  │  - 3 Coaching Cards │                     │
+                                  │  - Suggested Script │                     │
+                                  └─────────────────────┘                     │
+                                                                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Trigger Logic
+
+Analysis is triggered when **any** of these conditions are met:
+
+```python
+# First analysis threshold
+if buffer_size == 3 and not analyzed_before:
+    return "Initial 3 turns complete"
+
+# Periodic triggers
+if buffer_size >= last_analysis_size + 3:  # Every 3 new turns
+    return "Turns threshold reached"
+
+if chars_since_last >= 300:  # Character threshold
+    return "Character threshold reached"
+
+if time_since_last >= 30:  # Time threshold (seconds)
+    return "Time threshold reached"
+```
+
+### LangGraph Workflow
+
+```
+          START
+            │
+            ▼
+    ┌───────────────┐
+    │ Input Node    │
+    │ Prepare data  │
+    └───────┬───────┘
+            │
+    ┌───────┼───────┐
+    │       │       │
+    ▼       ▼       ▼
+┌──────┐┌──────┐┌──────┐
+│Card 1││Card 2││Card 3│  ← Parallel execution
+│Emotion│Leverage│Strategy│
+└──┬───┘└──┬───┘└──┬───┘
+   │       │       │
+   └───────┼───────┘
+           ▼
+    ┌───────────────┐
+    │ Aggregator    │
+    │ - Combine     │
+    │ - Suggest     │
+    └───────┬───────┘
+            │
+            ▼
+         END
+```
+
+### Data Flow
+
+```
+1. Customer speaks
+   ↓
+2. Gemini Realtime transcribes (STT)
+   ↓
+3. Conversation Manager receives turn
+   ↓
+4. Check if analysis should trigger
+   ↓
+5. If triggered: Send to Supervisor queue
+   ↓
+6. LangGraph runs 3-card analysis (parallel)
+   ↓
+7. Aggregator generates suggested script
+   ↓
+8. Supervisor publishes via LiveKit data channel
+   ↓
+9. Frontend receives and displays coaching
 ```
 
 ---
@@ -159,6 +314,46 @@ Fetch scenario details from API
 Render 3-panel call interface
 ```
 
+### 5. Voice Call with AXTRA Copilot Flow
+
+```
+User clicks "Start Voice Call"
+    ↓
+useLiveKitStore.connect(scenarioId)
+    ↓
+POST /api/livekit/token
+    ↓
+Server generates JWT token
+    ↓
+Frontend connects to LiveKit room
+    ↓
+Enable microphone
+    ↓
+AI Agent auto-joins room
+    ↓
+─────────────────────────────────────
+Conversation starts (voice + coaching):
+    ↓
+Customer speaks → Agent responds
+    ↓
+Conversation Manager tracks both turns
+    ↓
+Trigger check (3 turns / 300 chars / 30s)
+    ↓
+If triggered → Supervisor analyzes
+    ↓
+LangGraph workflow runs
+    ↓
+Coaching data published via data channel
+    ↓
+Frontend receives → Updates AxtraCopilot UI
+    ↓
+─────────────────────────────────────
+User clicks "End Call"
+    ↓
+Room disconnects, call ended
+```
+
 ---
 
 ## Directory Structure
@@ -170,20 +365,24 @@ axtra-console-prototype/
 │   │   ├── Sidebar.tsx           # Navigation
 │   │   ├── Header.tsx            # Top bar
 │   │   ├── Dashboard.tsx         # KPI dashboard
-│   │   └── ErrorBoundary.tsx     # Error handling
+│   │   ├── ErrorBoundary.tsx     # Error handling
+│   │   ├── livekit/              # LiveKit components
+│   │   │   ├── LiveKitTranscript.tsx
+│   │   │   └── AxtraCopilot.tsx  # NEW: Coaching UI
+│   │   └── ui/                   # UI primitives
 │   │
 │   ├── pages/                    # Route pages
 │   │   ├── Login.tsx             # Auth page
 │   │   ├── Dashboard.tsx         # Home page
 │   │   ├── Simulations.tsx       # Training list
-│   │   ├── ActiveSimulation.tsx  # Call interface
+│   │   ├── ActiveSimulation.tsx  # Call interface (3-panel)
 │   │   └── ...
 │   │
 │   ├── stores/                   # Zustand stores
 │   │   ├── useUserStore.ts       # Auth state
 │   │   ├── useSimulationStore.ts # Training state
 │   │   ├── useDashboardDataStore.ts
-│   │   ├── useLiveKitStore.ts    # Voice call state
+│   │   ├── useLiveKitStore.ts    # Voice + coaching data
 │   │   └── ...
 │   │
 │   ├── lib/                      # Utilities
@@ -203,8 +402,16 @@ axtra-console-prototype/
 │   ├── seed-demo.ts              # Demo data seeder
 │   └── agent/                    # AI Agent services
 │       └── python-livekit/       # Python voice agent
-│           ├── livekit_basic_agent.py
-│           ├── prompts.py
+│           ├── livekit_agent_langchain.py  # NEW: Main entry
+│           ├── agents/           # NEW: Agent components
+│           │   ├── agent_manager/
+│           │   │   └── agent.py
+│           │   ├── prompts/
+│           │   │   └── agent_prompts.py
+│           │   └── workflow/
+│           │       ├── build.py
+│           │       └── nodes.py
+│           ├── prompts.py        # Persona definitions
 │           ├── pyproject.toml
 │           └── README.md
 │
@@ -402,6 +609,9 @@ Source (TSX/TS/CSS)
 | **Zustand over Redux** | Simpler API, no providers, TypeScript native |
 | **Vite over CRA** | Faster HMR, modern ESM, better DX |
 | **Vitest over Jest** | Native ESM, Vite integration, faster |
+| **LangGraph for coaching** | Parallel card generation, structured output |
+| **LiveKit Data Channel** | Low-latency coaching updates without polling |
+| **Separate Python Agent** | Better AI/ML library ecosystem (LangChain) |
 
 ---
 

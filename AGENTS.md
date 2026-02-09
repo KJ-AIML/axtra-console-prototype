@@ -47,8 +47,9 @@ Essential information for AI coding agents working on the Axtra Console project.
 | **Backend** | Node.js HTTP Server | Native `http` module |
 | **Database** | Turso (libsql) | `@libsql/client` ^0.17.0 |
 | **Voice/Video** | LiveKit | `@livekit/components-react` ^2.9.19 |
-| **AI Agent** | Python + LiveKit Agents | `livekit-agents` ^1.2.0 |
+| **AI Voice Agent** | Python + LiveKit Agents | `livekit-agents` ^1.2.0 |
 | **AI LLM** | Google Gemini | `google.genai` (Realtime API) |
+| **AI Coaching** | LangGraph + LangChain | `langgraph` ^0.2.x |
 | **Auth** | bcryptjs | ^3.0.3 |
 | **Testing** | Vitest | v4.0.18 |
 | | React Testing Library | ^16.3.2 |
@@ -70,7 +71,8 @@ axtra-console-prototype/
 │   │   │   ├── LiveKitTranscript.tsx
 │   │   │   ├── LiveKitCallControls.tsx
 │   │   │   ├── LiveKitConnectionStatus.tsx
-│   │   │   └── LiveKitWelcomeScreen.tsx
+│   │   │   ├── LiveKitWelcomeScreen.tsx
+│   │   │   └── AxtraCopilot.tsx   # Real-time coaching UI
 │   │   └── ui/               # UI primitives (Button, Toast, etc.)
 │   ├── pages/                # Route pages
 │   │   ├── Login.tsx
@@ -121,11 +123,20 @@ axtra-console-prototype/
 │   ├── livekit.ts            # LiveKit token generation
 │   ├── seed-demo.ts          # Demo data seeder
 │   └── agent/                # AI Agent services
-│       └── python-livekit/   # Python voice agent (separate service)
-│           ├── livekit_basic_agent.py  # Main agent entry
-│           ├── prompts.py              # Persona definitions
-│           ├── pyproject.toml          # Python deps
-│           └── README.md               # Agent docs
+│       └── python-livekit/   # Python voice agent + AXTRA Copilot
+│           ├── livekit_agent_langchain.py  # Main agent with coaching
+│           ├── livekit_basic_agent.py      # Basic agent (no coaching)
+│           ├── agents/                     # LangGraph components
+│           │   ├── agent_manager/
+│           │   │   └── agent.py
+│           │   ├── prompts/
+│           │   │   └── agent_prompts.py
+│           │   └── workflow/
+│           │       ├── build.py
+│           │       └── nodes.py
+│           ├── prompts.py                  # Persona definitions
+│           ├── pyproject.toml              # Python deps
+│           └── README.md                   # Agent docs
 │
 ├── docs/                     # Documentation
 │   ├── index.md              # Quick start guide
@@ -505,38 +516,114 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 
 ---
 
-## Voice AI Integration (LiveKit)
+## Voice AI Integration (LiveKit + AXTRA Copilot)
 
 ### Architecture
 
-The AI Voice Agent provides realistic customer simulations using LiveKit and OpenAI's GPT-4o Realtime API.
+The AI Voice Agent provides realistic customer simulations with real-time coaching using LiveKit, Google Gemini Realtime API, and LangGraph.
 
 ```
-┌─────────────┐      WebRTC        ┌──────────────────┐      WebRTC       ┌─────────────┐
-│   Client    │◄──────────────────►│  LiveKit Cloud   │◄─────────────────►│  AI Agent   │
-│  (Browser)  │   (Voice/Audio)    │    (SFU/Media)   │   (Voice/Audio)   │  (External) │
-└──────┬──────┘                    └────────┬─────────┘                   └─────────────┘
-       │                                    │
-       │  1. Get token                      │  3. Agent auto-joins
-       │  2. Connect room                   │  4. Voice conversation  
-       │  3. Enable mic                     │  5. STT → Text Stream
-       │  4. Subscribe audio                │
-       │  5. Receive transcription ◄────────┘
-       ▼                                    
-┌─────────────────────────────────────────────────────────┐
-│  React App                                              │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │  useLiveKitStore                                 │   │
-│  │  - Room connection                               │   │
-│  │  - Audio controls                                │   │
-│  │  - Transcript array                              │   │
-│  └──────────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │  LiveKitTranscript Component                     │   │
-│  │  - Displays streaming text                       │   │
-│  │  - Separate sides (customer/operator)            │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+┌─────────────┐  WebRTC + Data   ┌──────────────────┐  WebRTC + Data  ┌─────────────────────┐
+│   Client    │◄────────────────►│  LiveKit Cloud   │◄────────────────►│   Python Agent      │
+│  (Browser)  │  (Voice/Coaching)│   (SFU/Media)    │ (Voice/Coaching)│   (AXTRA Copilot)   │
+└──────┬──────┘                  └────────┬─────────┘                 └─────────────────────┘
+       │                                  │
+       │  1. Get token                    │  3. Agent auto-joins
+       │  2. Connect room                 │  4. Voice conversation
+       │  3. Enable mic                   │  5. Conversation analysis
+       │  4. Subscribe audio              │  6. Coaching data → Data Channel
+       │  5. Receive coaching ◄───────────┘
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  React App                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │  useLiveKitStore                                                 │       │
+│  │  - Room connection                                               │       │
+│  │  - Audio controls                                                │       │
+│  │  - Transcript array                                              │       │
+│  │  - coachingData (3 cards + script)                               │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │  AxtraCopilot Component                                          │       │
+│  │  - 3 Coaching Cards (Emotion/Leverage/Strategy)                  │       │
+│  │  - Suggested Script                                              │       │
+│  │  - Real-time updates via DataReceived                            │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+│  ┌──────────────────────────────────────────────────────────────────┐       │
+│  │  LiveKitTranscript Component                                     │       │
+│  │  - Displays streaming text                                       │       │
+│  │  - Separate sides (customer/operator)                            │       │
+│  └──────────────────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### AXTRA Copilot System
+
+Parallel architecture for voice conversation and coaching analysis:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        AXTRA Copilot - Parallel Process                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────┐      ┌──────────────────────────────────┐  │
+│  │     VOICE AGENT PROCESS      │      │      SUPERVISOR PROCESS          │  │
+│  │                              │      │                                  │  │
+│  │  ┌────────────────────────┐  │      │  ┌──────────────────────────┐    │  │
+│  │  │ Google Gemini Realtime │  │      │  │ Conversation Manager     │    │  │
+│  │  │ - STT + LLM + TTS      │  │      │  │ - Track Customer turns   │    │  │
+│  │  └───────────┬────────────┘  │      │  │ - Track Agent turns      │    │  │
+│  │              │               │      │  │ - Calculate triggers     │    │  │
+│  │  Events:     │               │      │  └────────────┬─────────────┘    │  │
+│  │  • user_input│transcribed    │      │               │                  │  │
+│  │  • conversation_item_added   │      │  Triggers → Supervisor Queue     │  │
+│  └──────────────┼───────────────┘      │               │                  │  │
+│                 │                      │               ▼                  │  │
+│                 └──────────────────────►  ┌──────────────────────────┐    │  │
+│                                        │  │ LangGraph Workflow       │    │  │
+│                                        │  │                          │    │  │
+│                                        │  │  Card 1 → Emotion        │    │  │
+│                                        │  │  Card 2 → Leverage       │    │  │
+│                                        │  │  Card 3 → Strategy       │    │  │
+│                                        │  │       ↓                  │    │  │
+│                                        │  │  Aggregator → Script     │    │  │
+│                                        │  │       ↓                  │    │  │
+│                                        │  │  publish_data()          │    │  │
+│                                        │  └──────────────────────────┘    │  │
+│                                        └──────────────────────────────────┘  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Trigger Conditions
+
+Analysis runs when **any** of these thresholds are met:
+- **3 turns** after first analysis (or 3 turns for initial)
+- **300 characters** accumulated since last analysis
+- **30 seconds** elapsed since last analysis
+
+### 3-Card Coaching System
+
+| Card | Focus | Icon | Status Values |
+|------|-------|------|---------------|
+| **1** | Emotion | Heart | `danger`, `warning`, `success` |
+| **2** | Leverage | Scale | `info`, `success` |
+| **3** | Strategy | Target | `danger`, `warning` |
+
+### Data Flow
+
+```
+Customer speaks → Gemini transcribes → Conversation Manager
+                                              ↓
+                                    Check trigger conditions
+                                              ↓
+                                    If triggered → Supervisor Queue
+                                              ↓
+                                    LangGraph (3 cards + script)
+                                              ↓
+                                    LiveKit Data Channel
+                                              ↓
+                                    Frontend AxtraCopilot UI
 ```
 
 ### Transcript Data Structure
@@ -548,6 +635,22 @@ interface TranscriptEntry {
   text: string;
   timestamp: string;
   emotion?: string;
+}
+
+interface CoachingCard {
+  title: string;
+  detail: string;
+  action: string;
+  status: 'danger' | 'warning' | 'success' | 'info';
+}
+
+interface CoachingData {
+  analysis_id: number;
+  cards: CoachingCard[];  // 3 cards: Emotion, Leverage, Strategy
+  script: {
+    summary: string;
+    suggestion: string;
+  };
 }
 ```
 
@@ -568,30 +671,35 @@ interface TranscriptEntry {
 
 | File | Purpose |
 |------|---------|
-| `src/stores/useLiveKitStore.ts` | Room state, transcripts, actions |
+| `src/stores/useLiveKitStore.ts` | Room state, transcripts, coaching data |
 | `src/lib/livekit.ts` | LiveKit client utilities |
+| `src/components/livekit/AxtraCopilot.tsx` | Real-time coaching UI |
 | `server/livekit.ts` | Token generation |
-| `server/agent/python-livekit/` | Python AI Agent service |
+| `server/agent/python-livekit/` | Python AI Agent + AXTRA Copilot service |
+| `server/agent/python-livekit/agents/workflow/` | LangGraph coaching workflow |
 | `src/components/livekit/LiveKitTranscript.tsx` | Transcription UI |
 
 ---
 
-## Python AI Agent (Voice Service)
+## Python AI Agent (Voice Service + AXTRA Copilot)
 
-The **Python AI Agent** is a separate service that runs independently from the main Axtra Console application. It connects to LiveKit rooms and provides AI-powered voice conversations for call center training.
+The **Python AI Agent** is a separate service that runs independently from the main Axtra Console application. It connects to LiveKit rooms and provides:
+1. **AI Voice Conversations** - Realistic customer simulations using Google Gemini Realtime API
+2. **AXTRA Copilot** - Real-time coaching with 3-card analysis using LangGraph
 
 ### Architecture
 
 ```
-┌─────────────────┐      WebRTC       ┌─────────────────┐      WebRTC       ┌─────────────────┐
-│  Axtra Console  │ ◄───────────────► │  LiveKit Cloud  │ ◄───────────────► │   Python Agent  │
-│   (Frontend)    │   (Voice/Audio)   │  (Media Relay)  │   (Voice/Audio)   │ (Python Service)│
-│                 │                   │                 │                   │                 │
-│ • React App     │                   │ • Route audio   │                   │ • Auto-joins    │
-│ • Browser mic   │                   │ • Handle streams│                   │ • Gemini LLM    │
-│ • Speaker out   │                   │                 │                   │ • STT/TTS       │
-└─────────────────┘                   └─────────────────┘                   └─────────────────┘
-     Node.js API                          LiveKit Cloud                        Python 3.13+
+┌─────────────────┐   WebRTC + Data    ┌─────────────────┐   WebRTC + Data   ┌─────────────────────┐
+│  Axtra Console  │ ◄────────────────► │  LiveKit Cloud  │ ◄────────────────►│   Python Agent      │
+│   (Frontend)    │  (Voice/Coaching)  │  (Media Relay)  │  (Voice/Coaching) │  (AXTRA Copilot)    │
+│                 │                    │                 │                   │                     │
+│ • React App     │                    │ • Route audio   │                   │ • Auto-joins        │
+│ • Browser mic   │                    │ • Data channel  │                   │ • Gemini LLM        │
+│ • Speaker out   │                    │   routing       │                   │ • LangGraph         │
+│ • Coaching UI   │                    │                 │                   │ • 3-Card Analysis   │
+└─────────────────┘                    └─────────────────┘                   └─────────────────────┘
+     Node.js API                           LiveKit Cloud                          Python 3.13+
 ```
 
 ### Running the Python Agent
@@ -603,12 +711,17 @@ cd server/agent/python-livekit
 # Install dependencies (using uv)
 uv sync
 
-# Run in development mode (auto-reload)
-uv run python livekit_basic_agent.py dev
+# Run in development mode (auto-reload) - RECOMMENDED
+uv run python livekit_agent_langchain.py dev
 
 # Run in production mode
-uv run python livekit_basic_agent.py start
+uv run python livekit_agent_langchain.py start
+
+# Debug mode (verbose logging)
+DEBUG_MODE=true uv run python livekit_agent_langchain.py dev
 ```
+
+**Note:** `livekit_agent_langchain.py` is the main entry point with AXTRA Copilot support. `livekit_basic_agent.py` is the older version without coaching.
 
 ### Environment Variables
 
@@ -622,6 +735,9 @@ LIVEKIT_URL=wss://your-project.livekit.cloud
 
 # Google Gemini Configuration (Required)
 GOOGLE_API_KEY=your_google_api_key
+
+# Debug Mode (Optional)
+DEBUG_MODE=true  # Enable verbose logging for troubleshooting
 
 # Optional: Other providers
 OPENAI_API_KEY=your_openai_key
@@ -662,16 +778,20 @@ CALLER_INSTRUCTIONS = """
 4. **Agent auto-joins** and starts conversation with persona
 5. **Voice flows** through LiveKit's WebRTC infrastructure
 6. **Gemini Realtime API** handles speech-to-text and response generation
+7. **AXTRA Copilot** analyzes conversation every 3 turns/300 chars/30 seconds
+8. **Coaching cards** sent via LiveKit Data Channel to frontend
+9. **Frontend displays** real-time guidance in AxtraCopilot component
 
 ### Development Commands
 
 | Command | Purpose |
 |---------|---------|
 | `uv sync` | Install Python dependencies |
-| `uv run python livekit_basic_agent.py dev` | Run agent with auto-reload |
-| `uv run python livekit_basic_agent.py start` | Run agent in production mode |
-| `black livekit_basic_agent.py` | Format code |
-| `ruff check .` | Lint code |
+| `uv run python livekit_agent_langchain.py dev` | Run agent with AXTRA Copilot (auto-reload) |
+| `uv run python livekit_agent_langchain.py start` | Run agent in production mode |
+| `DEBUG_MODE=true uv run python livekit_agent_langchain.py dev` | Run with verbose logging |
+| `black livekit_agent_langchain.py agents/` | Format code |
+| `ruff check livekit_agent_langchain.py agents/` | Lint code |
 
 See [server/agent/python-livekit/README.md](./server/agent/python-livekit/README.md) for full documentation.
 
@@ -686,10 +806,26 @@ See [server/agent/python-livekit/README.md](./server/agent/python-livekit/README
 | "Module not found" | Run `npm install` |
 | Tests failing | Check mock setup in test files |
 | "No voice response" | Check LiveKit room connection and mic permissions |
-| "Agent not joining" | Verify Python AI agent service is running (`uv run python livekit_basic_agent.py dev`) |
+| "Agent not joining" | Verify Python AI agent service is running (`uv run python livekit_agent_langchain.py dev`) |
 | "Transcription not showing" | Check Agent has STT enabled in configuration |
 | "No voice from Python agent" | Check `GOOGLE_API_KEY` and LiveKit credentials in Python agent `.env` |
+| **"Coaching cards not appearing"** | Enable `DEBUG_MODE=true` and check: 1) `[MainAgent] Analysis triggered`, 2) `[Supervisor] ✅ Data published`, 3) Browser console for `🎯 AXTRA Copilot Update received` |
+| **"Analysis not triggering"** | Check both Customer AND Agent turns are tracked (verify `conversation_item_added` handler in agent logs) |
+| **"Empty coaching cards"** | Check LangGraph workflow output - cards should have `title`, `detail`, `action`, `status` fields |
+| **"Script field mismatch"** | Backend sends `suggested_script`, frontend expects `suggestion` - normalization should handle both |
 | Build errors | Ensure Node.js version supports native fetch |
+
+### Debug Mode
+
+Enable `DEBUG_MODE=true` in `server/agent/python-livekit/.env` to see:
+- Trigger calculations (turns, chars, time)
+- Workflow input/output
+- Conversation buffer state
+- Data channel publishing
+
+```bash
+DEBUG_MODE=true uv run python livekit_agent_langchain.py dev
+```
 
 ---
 

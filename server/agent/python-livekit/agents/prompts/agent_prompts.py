@@ -101,8 +101,27 @@ Card 1 (Emotion): {card_1}
 Card 2 (Leverage): {card_2}
 Card 3 (Action): {card_3}
 
-### Current Conversation:
+### Current Conversation (Chronological Order):
 {conversation_data}
+
+CRITICAL CONTEXT ANALYSIS - READ CAREFULLY:
+1. Identify the LAST speaker in the conversation:
+   - If LAST is "Agent" → Agent just spoke, WAITING for customer to respond
+   - If LAST is "Customer" → Customer just spoke, Agent needs to RESPOND
+
+2. Check if the Agent has ALREADY stated/explained the problem:
+   - Look for Agent messages that describe an issue, complaint, or problem
+   - If Agent ALREADY stated the problem → Suggest ACKNOWLEDGING the problem, not asking for it again
+   - Example: If agent said "you charged me wrong", don't suggest asking "what is your problem?"
+
+3. Check conversation flow:
+   - Agent stated problem → Customer acknowledges → Agent should respond to acknowledgment
+   - Agent asked question → Customer answers → Agent should respond to answer
+   - Agent stated problem → Waiting → Suggest patience or acknowledgment
+
+4. COMMON MISTAKE TO AVOID:
+   - WRONG: Suggesting to ask for problem details when agent ALREADY stated the problem
+   - RIGHT: Suggest acknowledging the stated problem and moving to solution
 
 LANGUAGE RULE:
 1. DETECT the language of the last message in "Current Conversation".
@@ -111,12 +130,16 @@ LANGUAGE RULE:
 
 INSTRUCTIONS:
 1. Synthesize the insights from all cards.
-2. Suggest a specific verbal response script for the agent to say next in "suggested_script".
-3. Provide a brief situation summary in "summary".
+2. Based on CRITICAL CONTEXT ANALYSIS, suggest what the agent should do NEXT.
+3. If agent already stated the problem, suggest:
+   - Acknowledging the problem
+   - Moving toward solution/next steps
+   - NOT asking "what is your problem" again
+4. Provide a brief situation summary in "summary".
 
 OUTPUT FORMAT (JSON ONLY):
 {
-  "summary": "Brief synthesis (Translate to detected language)",
-  "suggested_script": "The exact words the agent should say (Translate to detected language)"
+  "summary": "Brief synthesis - note who spoke last and what was said (Translate to detected language)",
+  "suggested_script": "Appropriate response based on who spoke last and conversation context (Translate to detected language)"
 }
 """

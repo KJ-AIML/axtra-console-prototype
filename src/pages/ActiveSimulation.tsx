@@ -21,7 +21,9 @@ import {
   ArrowLeft, User, Clock, Calendar, 
   FileText, History, TrendingUp, AlertCircle, CheckCircle, 
   Lightbulb, MessageSquare, Smile, Frown, Meh, Zap, 
-  ChevronRight, MoreHorizontal, Loader2, Wifi, WifiOff
+  ChevronRight, MoreHorizontal, Loader2, Wifi, WifiOff,
+  Heart, Scale, Target, Sparkles, BrainCircuit,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 
 // ============================================
@@ -266,150 +268,210 @@ const CustomerDataPanel = memo(() => {
 CustomerDataPanel.displayName = 'CustomerDataPanel';
 
 // ============================================
-// COMPONENT: AI Analysis Panel (Right)
+// COMPONENT: AI Analysis Panel (Right) - AXTRA Copilot
 // ============================================
 
 const AIAnalysisPanel = memo(() => {
-  const [currentMood, setCurrentMood] = useState('frustrated');
-  const moodOptions = ['angry', 'frustrated', 'neutral', 'satisfied', 'happy'];
+  const coachingData = useLiveKitStore((state) => state.coachingData);
+  const isConnected = useLiveKitStore((state) => state.isConnected);
+  const [expandedCard, setExpandedCard] = useState<number | null>(0);
+  const [isCopied, setIsCopied] = useState(false);
 
-  // Cycle through moods for demo
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentMood(prev => {
-        const idx = moodOptions.indexOf(prev);
-        return moodOptions[(idx + 1) % moodOptions.length];
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const getMoodIcon = (mood: string) => {
-    switch (mood) {
-      case 'angry': return <Frown size={24} className="text-rose-500" />;
-      case 'frustrated': return <Meh size={24} className="text-amber-500" />;
-      case 'neutral': return <Meh size={24} className="text-gray-400" />;
-      case 'satisfied': return <Smile size={24} className="text-emerald-400" />;
-      case 'happy': return <Smile size={24} className="text-emerald-500" />;
-      default: return <Meh size={24} className="text-gray-400" />;
-    }
+  // Toggle card expansion
+  const toggleCard = (index: number) => {
+    setExpandedCard(expandedCard === index ? null : index);
   };
 
-  const getMoodColor = (mood: string) => {
-    switch (mood) {
-      case 'angry': return 'bg-rose-50 border-rose-200 text-rose-700';
-      case 'frustrated': return 'bg-amber-50 border-amber-200 text-amber-700';
-      case 'neutral': return 'bg-gray-50 border-gray-200 text-gray-700';
-      case 'satisfied': return 'bg-emerald-50 border-emerald-200 text-emerald-700';
-      case 'happy': return 'bg-emerald-50 border-emerald-200 text-emerald-700';
-      default: return 'bg-gray-50 border-gray-200 text-gray-700';
-    }
+  // Copy script to clipboard
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
   };
+
+  // Card icons and colors
+  const cardMeta = [
+    { icon: Heart, title: 'Emotion', color: 'text-rose-500', bg: 'bg-rose-50', border: 'border-rose-200' },
+    { icon: Scale, title: 'Leverage', color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200' },
+    { icon: Target, title: 'Strategy', color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+  ];
+
+  // Status colors
+  const statusColors = {
+    danger: 'bg-rose-50 border-rose-200',
+    warning: 'bg-amber-50 border-amber-200',
+    success: 'bg-emerald-50 border-emerald-200',
+    info: 'bg-blue-50 border-blue-200',
+  };
+
+  const statusBadgeColors = {
+    danger: 'bg-rose-100 text-rose-700',
+    warning: 'bg-amber-100 text-amber-700',
+    success: 'bg-emerald-100 text-emerald-700',
+    info: 'bg-blue-100 text-blue-700',
+  };
+
+  // Empty state
+  if (!coachingData) {
+    return (
+      <div className="h-full flex flex-col bg-gray-50">
+        {/* Header */}
+        <div className="p-4 border-b border-gray-200 bg-white">
+          <div className="flex items-center gap-2 mb-1">
+            <Zap size={16} className="text-indigo-600" />
+            <h3 className="font-semibold text-gray-900">AXTRA Copilot</h3>
+          </div>
+          <p className="text-xs text-gray-500">Real-time AI coaching</p>
+        </div>
+
+        {/* Empty State */}
+        <div className="flex-1 flex flex-col items-center justify-center p-4 text-center">
+          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-4">
+            <BrainCircuit size={32} className="text-indigo-600" />
+          </div>
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">Waiting for conversation</h4>
+          <p className="text-xs text-gray-500 max-w-[200px]">
+            {isConnected 
+              ? 'Start speaking to receive real-time coaching insights'
+              : 'Connect to a call to activate AI coaching'
+            }
+          </p>
+          
+          {isConnected && (
+            <div className="mt-4 flex items-center gap-2 text-xs text-emerald-600">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+              Listening...
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const { cards, script, analysisId, timestamp } = coachingData;
+  const analysisTime = new Date(timestamp).toLocaleTimeString();
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-white">
+      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
         <div className="flex items-center gap-2 mb-1">
-          <Zap size={16} className="text-indigo-600" />
-          <h3 className="font-semibold text-gray-900">Axtra Copilot</h3>
-        </div>
-        <p className="text-xs text-gray-500">Real-time AI guidance</p>
-      </div>
-
-      {/* Emotion Monitor */}
-      <div className="p-4 border-b border-gray-200 bg-white">
-        <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Customer Emotion</h4>
-        <div className={cn('flex items-center gap-3 p-3 rounded-xl border transition-all', getMoodColor(currentMood))}>
-          {getMoodIcon(currentMood)}
+          <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
+            <Sparkles size={14} className="text-indigo-600" />
+          </div>
           <div>
-            <div className="font-semibold capitalize">{currentMood}</div>
-            <div className="text-xs opacity-75">
-              {currentMood === 'angry' && 'Immediate de-escalation needed'}
-              {currentMood === 'frustrated' && 'Show empathy and offer solutions'}
-              {currentMood === 'neutral' && 'Maintain professional tone'}
-              {currentMood === 'satisfied' && 'Good progress, keep it up'}
-              {currentMood === 'happy' && 'Positive engagement, opportunity for upsell'}
-            </div>
+            <h3 className="font-semibold text-gray-900">AXTRA Copilot</h3>
+            <p className="text-[10px] text-gray-500">
+              Analysis #{analysisId} • {analysisTime}
+            </p>
           </div>
         </div>
-
-        {/* Emotion Timeline */}
-        <div className="mt-3 flex items-center gap-1">
-          {moodOptions.map((mood) => (
-            <div
-              key={mood}
-              className={cn(
-                'flex-1 h-1.5 rounded-full transition-all',
-                mood === currentMood ? 'bg-indigo-500' : 'bg-gray-200'
-              )}
-            />
-          ))}
-        </div>
       </div>
 
-      {/* Suggestions */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Live Suggestions</h4>
-        
-        {MOCK_AI_SUGGESTIONS.map((suggestion) => (
-          <div
-            key={suggestion.id}
-            className={cn(
-              'p-3 rounded-xl border transition-all hover:shadow-md',
-              suggestion.priority === 'high' && 'bg-rose-50 border-rose-200',
-              suggestion.priority === 'medium' && 'bg-amber-50 border-amber-200',
-              suggestion.type === 'insight' && 'bg-indigo-50 border-indigo-200',
-            )}
-          >
-            <div className="flex items-start gap-2 mb-2">
-              {suggestion.type === 'suggestion' && <Lightbulb size={16} className="text-amber-500 mt-0.5" />}
-              {suggestion.type === 'warning' && <AlertCircle size={16} className="text-rose-500 mt-0.5" />}
-              {suggestion.type === 'insight' && <CheckCircle size={16} className="text-indigo-500 mt-0.5" />}
+      {/* Coaching Cards */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {cards.map((card, index) => {
+          const meta = cardMeta[index] || cardMeta[2];
+          const Icon = meta.icon;
+          const isExpanded = expandedCard === index;
+
+          return (
+            <div
+              key={`${analysisId}-${index}`}
+              className={cn(
+                'rounded-xl border transition-all duration-200 overflow-hidden bg-white',
+                statusColors[card.status as keyof typeof statusColors] || statusColors.info,
+                isExpanded ? 'shadow-md' : 'shadow-sm'
+              )}
+            >
+              {/* Card Header */}
+              <button
+                onClick={() => toggleCard(index)}
+                className="w-full p-3 flex items-center gap-3 text-left"
+              >
+                <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', meta.bg)}>
+                  <Icon size={18} className={meta.color} />
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      {meta.title}
+                    </span>
+                    <span className={cn(
+                      'px-1.5 py-0.5 rounded text-[9px] font-medium',
+                      statusBadgeColors[card.status as keyof typeof statusBadgeColors] || statusBadgeColors.info
+                    )}>
+                      {card.status}
+                    </span>
+                  </div>
+                  <h4 className="font-semibold text-gray-900 text-sm truncate mt-0.5">
+                    {card.title}
+                  </h4>
+                </div>
+                
+                {isExpanded ? (
+                  <ChevronUp size={16} className="text-gray-400 shrink-0" />
+                ) : (
+                  <ChevronDown size={16} className="text-gray-400 shrink-0" />
+                )}
+              </button>
+              
+              {/* Expanded Content */}
+              {isExpanded && (
+                <div className="px-3 pb-3 pt-0 border-t border-gray-100">
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      {card.detail}
+                    </p>
+                    <div className="bg-gray-50 rounded-lg p-2.5">
+                      <p className="text-[10px] font-medium text-gray-500 mb-1">Action:</p>
+                      <p className="text-xs text-gray-800">{card.action}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Suggested Script */}
+        {script.suggestion && (
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <MessageSquare size={14} className="text-indigo-600" />
+              </div>
               <div>
-                <div className="text-sm font-medium text-gray-900">{suggestion.message}</div>
+                <h4 className="font-semibold text-gray-900 text-sm">Suggested Response</h4>
               </div>
             </div>
-            <div className={cn(
-              'text-xs ml-6 p-2 rounded-lg',
-              suggestion.priority === 'high' && 'bg-rose-100 text-rose-700',
-              suggestion.priority === 'medium' && 'bg-amber-100 text-amber-700',
-              suggestion.type === 'insight' && 'bg-indigo-100 text-indigo-700',
-            )}>
-              <strong>Action:</strong> {suggestion.action}
+            
+            {script.summary && (
+              <div className="mb-2 text-xs text-gray-600 bg-white/50 rounded-lg p-2">
+                <span className="font-medium">Context:</span> {script.summary}
+              </div>
+            )}
+            
+            <div className="bg-white rounded-lg p-2.5 border border-indigo-100 shadow-sm">
+              <p className="text-xs text-gray-800 leading-relaxed">
+                {script.suggestion}
+              </p>
             </div>
-          </div>
-        ))}
-
-        {/* Real-time Script Guide */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Suggested Response</h4>
-          <p className="text-sm text-gray-700 italic">
-            "I understand your frustration, Sarah. As a valued Gold member, I'm going to apply a courtesy credit to your account and ensure this billing issue is permanently resolved. Let me process that for you now."
-          </p>
-          <button className="mt-2 text-xs text-indigo-600 font-medium hover:text-indigo-700">
-            Copy to clipboard
-          </button>
-        </div>
-
-        {/* Knowledge Base Quick Links */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Relevant Articles</h4>
-          <div className="space-y-2">
-            <button className="w-full flex items-center justify-between p-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <span>Billing Dispute Resolution</span>
-              <ChevronRight size={14} className="text-gray-400" />
-            </button>
-            <button className="w-full flex items-center justify-between p-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <span>Gold Tier Benefits</span>
-              <ChevronRight size={14} className="text-gray-400" />
-            </button>
-            <button className="w-full flex items-center justify-between p-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <span>Retention Strategies</span>
-              <ChevronRight size={14} className="text-gray-400" />
+            
+            <button
+              onClick={() => handleCopy(script.suggestion)}
+              className={cn(
+                'mt-2 w-full py-1.5 px-2 rounded-lg text-xs font-medium transition-colors',
+                isCopied 
+                  ? 'bg-emerald-100 text-emerald-700' 
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              )}
+            >
+              {isCopied ? 'Copied!' : 'Copy to Clipboard'}
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

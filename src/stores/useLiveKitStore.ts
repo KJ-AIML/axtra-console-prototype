@@ -24,6 +24,25 @@ export interface TranscriptEntry {
   emotion?: string;
 }
 
+export interface CoachingCard {
+  title: string;
+  detail: string;
+  action: string;
+  status: 'danger' | 'warning' | 'success' | 'info';
+}
+
+export interface CoachingScript {
+  summary: string;
+  suggestion: string;
+}
+
+export interface CoachingData {
+  analysisId: number;
+  timestamp: number;
+  cards: CoachingCard[];
+  script: CoachingScript;
+}
+
 interface LiveKitState {
   // Room
   room: Room | null;
@@ -43,6 +62,9 @@ interface LiveKitState {
   
   // Transcripts
   transcripts: TranscriptEntry[];
+  
+  // Coaching data (from AXTRA Copilot)
+  coachingData: CoachingData | null;
   
   // Actions
   connect: (scenarioId: string) => Promise<void>;
@@ -69,6 +91,7 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
   isPaused: false,
   callDuration: 0,
   transcripts: [],
+  coachingData: null,
 
   // Connect to room (creates room, agent will auto-join from server)
   connect: async (scenarioId: string) => {
@@ -145,6 +168,36 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
               emotion: data.emotion,
             };
             set({ transcripts: [...transcripts, newEntry] });
+          } else if (data.type === 'coaching_update') {
+            // AXTRA Copilot real-time coaching data
+            console.log('🎯 AXTRA Copilot Update received:', data);
+            
+            // Validate script format
+            let script = data.script || { summary: '', suggestion: '' };
+            if (typeof script === 'object' && !script.suggestion && script.summary) {
+              // Handle case where script might have different field names
+              script = { 
+                summary: script.summary || '', 
+                suggestion: script.suggested_script || script.suggestion || '' 
+              };
+            }
+            
+            const coachingData: CoachingData = {
+              analysisId: data.analysis_id || 0,
+              timestamp: data.timestamp || Date.now(),
+              cards: data.cards || [],
+              script: script
+            };
+            
+            console.log('✅ Setting coaching data:', coachingData);
+            set({ coachingData });
+            
+            // Also log to console for debugging
+            console.log('%c[AXTRA Copilot]', 'color: #4F46E5; font-weight: bold; font-size: 14px;', {
+              analysisId: coachingData.analysisId,
+              cardsCount: coachingData.cards.length,
+              script: coachingData.script
+            });
           }
         } catch (e) {
           console.error('[LiveKit] Failed to parse data message:', e);
@@ -224,6 +277,7 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       isPaused: false,
       callDuration: 0,
       transcripts: [],
+      coachingData: null,
       connectionError: null,
 
     });
