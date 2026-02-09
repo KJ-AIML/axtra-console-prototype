@@ -298,10 +298,23 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       
     } catch (error) {
       console.error('[LiveKit] Connection error:', error);
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to connect';
+      if (error instanceof Error) {
+        if (error.message.includes('Microphone permission')) {
+          errorMessage = error.message; // Use the specific message from enableMicrophone
+        } else if (error.message.includes('token') || error.message.includes('Token')) {
+          errorMessage = 'Failed to get call token. Please try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       set({ 
         isConnecting: false, 
         isConnected: false,
-        connectionError: error instanceof Error ? error.message : 'Failed to connect'
+        connectionError: errorMessage
       });
       throw error;
     }

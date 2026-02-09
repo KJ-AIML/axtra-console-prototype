@@ -387,6 +387,7 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
           isConnected={isConnected}
           isConnecting={isConnecting}
           callDuration={callDuration}
+          coachingCount={coachingHistory.length}
         />
 
         {/* Error message */}

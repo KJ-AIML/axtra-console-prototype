@@ -236,8 +236,40 @@ export const SCHEMA = {
   `,
 };
 
+// Indexes for query performance
+const INDEXES = [
+  {
+    name: 'idx_call_sessions_user_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_call_sessions_user_status ON call_sessions(user_id, status)`
+  },
+  {
+    name: 'idx_call_sessions_user_ended',
+    sql: `CREATE INDEX IF NOT EXISTS idx_call_sessions_user_ended ON call_sessions(user_id, ended_at DESC)`
+  },
+  {
+    name: 'idx_call_coaching_call_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_call_coaching_call_id ON call_coaching(call_id)`
+  },
+  {
+    name: 'idx_call_transcripts_call_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_call_transcripts_call_id ON call_transcripts(call_id)`
+  },
+  {
+    name: 'idx_user_scenarios_user_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_user_scenarios_user_status ON user_scenarios(user_id, status)`
+  },
+  {
+    name: 'idx_sessions_token',
+    sql: `CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)`
+  },
+  {
+    name: 'idx_qa_highlights_user',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qa_highlights_user ON qa_highlights(user_id, created_at DESC)`
+  },
+];
+
 /**
- * Initialize database tables
+ * Initialize database tables and indexes
  */
 export async function initDatabase(): Promise<void> {
   try {
@@ -247,6 +279,13 @@ export async function initDatabase(): Promise<void> {
     for (const [name, sql] of Object.entries(SCHEMA)) {
       await db.execute(sql);
       console.log(`  ✓ Table '${name}' ready`);
+    }
+    
+    // Create indexes
+    console.log('  Creating indexes...');
+    for (const index of INDEXES) {
+      await db.execute(index.sql);
+      console.log(`    ✓ Index '${index.name}' ready`);
     }
     
     console.log('✅ Database initialized successfully');

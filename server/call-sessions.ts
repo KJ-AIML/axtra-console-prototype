@@ -296,7 +296,6 @@ export async function completeCallSession(
         `,
         args: [uuidv4(), session.user_id, session.scenario_id, calculatedScore],
       });
-      console.log(`[CallSession] Created and completed scenario ${session.scenario_id} for user ${session.user_id}`);
     } else {
       // Update existing record
       await db.execute({
@@ -310,7 +309,20 @@ export async function completeCallSession(
         `,
         args: [calculatedScore, session.user_id, session.scenario_id],
       });
-      console.log(`[CallSession] Marked scenario ${session.scenario_id} as completed for user ${session.user_id}`);
+    }
+    
+    // Verify the update succeeded
+    const verifyResult = await db.execute({
+      sql: 'SELECT status, score FROM user_scenarios WHERE user_id = ? AND scenario_id = ?',
+      args: [session.user_id, session.scenario_id],
+    });
+    
+    if (verifyResult.rows.length === 0) {
+      console.error(`[CallSession] CRITICAL: user_scenarios record missing after update for user ${session.user_id}, scenario ${session.scenario_id}`);
+    } else if (verifyResult.rows[0].status !== 'completed') {
+      console.error(`[CallSession] CRITICAL: user_scenarios status is '${verifyResult.rows[0].status}' instead of 'completed'`);
+    } else {
+      console.log(`[CallSession] Verified scenario ${session.scenario_id} completed with score ${verifyResult.rows[0].score}`);
     }
   } catch (e) {
     console.error('[CallSession] Failed to update user_scenarios:', e);

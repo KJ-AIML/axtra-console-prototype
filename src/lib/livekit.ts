@@ -65,9 +65,25 @@ export async function connectToRoom(
 
 /**
  * Enable microphone in the room
+ * Throws specific errors for permission issues
  */
 export async function enableMicrophone(room: Room): Promise<void> {
-  await room.localParticipant.setMicrophoneEnabled(true);
+  try {
+    await room.localParticipant.setMicrophoneEnabled(true);
+  } catch (error: any) {
+    // Check for permission errors
+    if (error.name === 'NotAllowedError' || error.message?.includes('Permission')) {
+      throw new Error('Microphone permission denied. Please allow microphone access in your browser settings and try again.');
+    }
+    if (error.name === 'NotFoundError') {
+      throw new Error('No microphone found. Please connect a microphone and try again.');
+    }
+    if (error.name === 'NotReadableError') {
+      throw new Error('Microphone is in use by another application. Please close other apps and try again.');
+    }
+    // Re-throw original error if not handled
+    throw error;
+  }
 }
 
 /**

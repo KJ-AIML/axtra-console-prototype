@@ -283,6 +283,7 @@ npm run test:coverage
 - **Style Guide** → [style-guide.md](./style-guide.md)
 - **Contributing** → [contributing.md](./contributing.md)
 - **Roadmap** → [roadmap.md](./roadmap.md)
+- **Improvement Analysis** → [improvements.md](./improvements.md)
 - **Agent Guide** → [../AGENTS.md](../AGENTS.md)
 
 ---

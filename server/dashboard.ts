@@ -53,11 +53,30 @@ export interface QaHighlight {
   createdAt: string;
 }
 
+export interface RecentCall {
+  id: string;
+  scenarioTitle: string;
+  difficulty: string;
+  duration: string;
+  score?: number;
+  customerSentiment: string;
+  completedAt: string;
+}
+
+export interface CallStats {
+  totalCalls: number;
+  averageScore: number;
+  totalCoaching: number;
+  completionRate: number;
+}
+
 export interface DashboardData {
   metrics: UserMetric[];
   scenarios: UserScenario[];
   skillVelocity: SkillVelocity | null;
   qaHighlights: QaHighlight[];
+  recentCalls: RecentCall[];
+  callStats: CallStats;
 }
 
 /**
@@ -174,14 +193,110 @@ export async function getQaHighlights(userId: string): Promise<QaHighlight[]> {
 }
 
 /**
+ * Get recent calls for user
+ */
+export async function getRecentCalls(userId: string, limit: number = 5): Promise<RecentCall[]> {
+  const result = await db.execute({
+    sql: `
+      SELECT 
+        cs.id,
+        s.title as scenario_title,
+        s.difficulty,
+        cs.duration_seconds,
+        cs.final_score as score,
+        cs.customer_sentiment,
+        cs.ended_at as completed_at
+      FROM call_sessions cs
+      JOIN scenarios s ON cs.scenario_id = s.id
+      WHERE cs.user_id = ? AND cs.status = 'completed'
+      ORDER BY cs.ended_at DESC
+      LIMIT ?
+    `,
+    args: [userId, limit],
+  });
+
+  return result.rows.map(row => ({
+    id: row.id as string,
+    scenarioTitle: row.scenario_title as string,
+    difficulty: row.difficulty as string,
+    duration: formatDuration(row.duration_seconds as number),
+    score: row.score as number | undefined,
+    customerSentiment: row.customer_sentiment as string,
+    completedAt: row.completed_at as string,
+  }));
+}
+
+/**
+ * Get call statistics
+ */
+export async function getCallStats(userId: string): Promise<CallStats> {
+  // Get total calls and average score
+  const callsResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(*) as total,
+        AVG(final_score) as avg_score
+      FROM call_sessions
+      WHERE user_id = ? AND status = 'completed'
+    `,
+    args: [userId],
+  });
+
+  // Get total coaching count
+  const coachingResult = await db.execute({
+    sql: `
+      SELECT COUNT(*) as total
+      FROM call_coaching cc
+      JOIN call_sessions cs ON cc.call_id = cs.id
+      WHERE cs.user_id = ?
+    `,
+    args: [userId],
+  });
+
+  // Get completion rate (completed vs total scenarios)
+  const completionResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(*) as total
+      FROM user_scenarios
+      WHERE user_id = ?
+    `,
+    args: [userId],
+  });
+
+  const totalCalls = Number(callsResult.rows[0]?.total || 0);
+  const avgScore = Number(callsResult.rows[0]?.avg_score || 0);
+  const totalCoaching = Number(coachingResult.rows[0]?.total || 0);
+  const completed = Number(completionResult.rows[0]?.completed || 0);
+  const totalScenarios = Number(completionResult.rows[0]?.total || 1);
+
+  return {
+    totalCalls,
+    averageScore: Math.round(avgScore),
+    totalCoaching,
+    completionRate: Math.round((completed / totalScenarios) * 100),
+  };
+}
+
+// Helper to format duration
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
  * Get full dashboard data for user
  */
 export async function getDashboardData(userId: string): Promise<DashboardData> {
-  const [metrics, scenarios, skillVelocity, qaHighlights] = await Promise.all([
+  const [metrics, scenarios, skillVelocity, qaHighlights, recentCalls, callStats] = await Promise.all([
     getUserMetrics(userId),
     getUserScenarios(userId),
     getSkillVelocity(userId),
     getQaHighlights(userId),
+    getRecentCalls(userId),
+    getCallStats(userId),
   ]);
 
   return {
@@ -189,6 +304,8 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     scenarios,
     skillVelocity,
     qaHighlights,
+    recentCalls,
+    callStats,
   };
 }
 

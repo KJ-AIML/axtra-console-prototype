@@ -920,5 +920,7 @@ Currently uses a simple keyword-based algorithm to generate:
 - [Design System](./docs/design_system.md)
 - [Style Guide](./docs/style-guide.md)
 - [LiveKit Integration](./docs/livekit.md)
+- [Development Roadmap](./docs/roadmap.md)
+- [Improvement Analysis](./docs/improvements.md) - Current gaps and quick wins
 - [Python AI Agent](./server/agent/python-livekit/README.md)
 - [README](./README.md)

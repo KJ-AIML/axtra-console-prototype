@@ -42,11 +42,30 @@ export interface QaHighlight {
   createdAt: string;
 }
 
+export interface RecentCall {
+  id: string;
+  scenarioTitle: string;
+  difficulty: string;
+  duration: string;
+  score?: number;
+  customerSentiment: string;
+  completedAt: string;
+}
+
+export interface CallStats {
+  totalCalls: number;
+  averageScore: number;
+  totalCoaching: number;
+  completionRate: number;
+}
+
 export interface DashboardData {
   metrics: UserMetric[];
   scenarios: Scenario[];
   skillVelocity: SkillVelocity | null;
   qaHighlights: QaHighlight[];
+  recentCalls: RecentCall[];
+  callStats: CallStats;
 }
 
 interface DashboardDataState extends DashboardData {
@@ -67,6 +86,8 @@ export const useDashboardDataStore = create<DashboardDataState>((set, get) => ({
   scenarios: [],
   skillVelocity: null,
   qaHighlights: [],
+  recentCalls: [],
+  callStats: { totalCalls: 0, averageScore: 0, totalCoaching: 0, completionRate: 0 },
   isLoading: false,
   error: null,
 
@@ -84,6 +105,8 @@ export const useDashboardDataStore = create<DashboardDataState>((set, get) => ({
         scenarios: response.data.scenarios,
         skillVelocity: response.data.skillVelocity,
         qaHighlights: response.data.qaHighlights,
+        recentCalls: response.data.recentCalls || [],
+        callStats: response.data.callStats || { totalCalls: 0, averageScore: 0, totalCoaching: 0, completionRate: 0 },
         isLoading: false,
         error: null,
       });
