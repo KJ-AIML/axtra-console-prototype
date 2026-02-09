@@ -6,6 +6,7 @@ from .nodes import (
     call_model_card_1,
     call_model_card_2,
     call_model_card_3,
+    call_model_summary,
 )
 
 
@@ -30,3 +31,17 @@ def build_workflow():
     parallel_workflow = parallel_builder.compile()
 
     return parallel_workflow
+
+def build_summary_workflow():
+    # Build workflow
+    summary_builder = StateGraph(State)
+
+    # Add nodes
+    summary_builder.add_node("call_model_summary", call_model_summary)
+
+    # Add edges to connect nodes
+    summary_builder.add_edge(START, "call_model_summary")
+    summary_builder.add_edge("call_model_summary", END)
+    summary_workflow = summary_builder.compile()
+
+    return summary_workflow

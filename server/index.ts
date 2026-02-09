@@ -42,6 +42,13 @@ import {
   generateRoomName,
   type TokenRequest,
 } from './livekit';
+import {
+  createCallSession,
+  completeCallSession,
+  getCallDetails,
+  getUserCallHistory,
+  abandonCallSession,
+} from './call-sessions';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -488,6 +495,150 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('LiveKit token generation error:', error);
         sendJson(res, 500, { error: 'Failed to generate token' });
+      }
+      return;
+    }
+
+    // ============================================
+    // Call Session endpoints (for voice calls)
+    // ============================================
+    
+    // Create call session
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'calls') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req) as { scenarioId: string; roomName: string };
+        
+        if (!body.scenarioId || !body.roomName) {
+          sendJson(res, 400, { error: 'scenarioId and roomName are required' });
+          return;
+        }
+        
+        const session = await createCallSession({
+          user_id: user.id,
+          scenario_id: body.scenarioId,
+          room_name: body.roomName,
+        });
+        
+        sendJson(res, 201, { success: true, data: { session } });
+      } catch (error) {
+        console.error('Create call session error:', error);
+        sendJson(res, 500, { error: 'Failed to create call session' });
+      }
+      return;
+    }
+    
+    // Complete call session
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'calls' && segments[1] === 'complete') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req) as {
+          callId: string;
+          durationSeconds: number;
+          totalTurns: number;
+          customerSentiment: string;
+          transcripts: any[];
+          coachingHistory: any[];
+          finalScore?: number;
+        };
+        
+        if (!body.callId) {
+          sendJson(res, 400, { error: 'callId is required' });
+          return;
+        }
+        
+        const result = await completeCallSession({
+          call_id: body.callId,
+          duration_seconds: body.durationSeconds || 0,
+          total_turns: body.totalTurns || 0,
+          customer_sentiment: body.customerSentiment || 'neutral',
+          transcripts: body.transcripts || [],
+          coaching_history: body.coachingHistory || [],
+          final_score: body.finalScore,
+        });
+        
+        sendJson(res, 200, { success: true, data: result });
+      } catch (error) {
+        console.error('Complete call session error:', error);
+        sendJson(res, 500, { error: 'Failed to complete call session' });
+      }
+      return;
+    }
+    
+    // Get call details
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'calls') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const callId = segments[1];
+        const details = await getCallDetails(callId);
+        
+        // Verify user owns this call
+        if (details.session.user_id !== user.id) {
+          sendJson(res, 403, { error: 'Access denied' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, data: details });
+      } catch (error) {
+        console.error('Get call details error:', error);
+        sendJson(res, 404, { error: 'Call not found' });
+      }
+      return;
+    }
+    
+    // Get user call history
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'calls' && segments[1] === 'history') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const history = await getUserCallHistory(user.id);
+        sendJson(res, 200, { success: true, data: { history } });
+      } catch (error) {
+        console.error('Get call history error:', error);
+        sendJson(res, 500, { error: 'Failed to get call history' });
       }
       return;
     }

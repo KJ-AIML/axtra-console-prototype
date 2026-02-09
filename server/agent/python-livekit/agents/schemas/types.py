@@ -12,12 +12,18 @@ class State(TypedDict):
     llm_card_3_response: str
     suggest_response: str
 
+
 class SuggestionCard(BaseModel):
     title: str
     detail: str
     action: str
     status: Literal["danger", "warning", "success", "info"]
 
+
 class SuggestionResponse(BaseModel):
     summary: str
     suggestion: str
+
+
+class SummaryResponse(BaseModel):
+    summary: str

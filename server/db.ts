@@ -156,6 +156,84 @@ export const SCHEMA = {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `,
+
+  // Call Sessions (voice call records)
+  call_sessions: `
+    CREATE TABLE IF NOT EXISTS call_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      scenario_id TEXT NOT NULL,
+      room_name TEXT NOT NULL,
+      status TEXT DEFAULT 'in_progress' CHECK(status IN ('in_progress', 'completed', 'abandoned')),
+      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      ended_at DATETIME,
+      duration_seconds INTEGER DEFAULT 0,
+      total_turns INTEGER DEFAULT 0,
+      customer_sentiment TEXT DEFAULT 'neutral' CHECK(customer_sentiment IN ('angry', 'frustrated', 'neutral', 'satisfied', 'happy')),
+      final_score INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+    )
+  `,
+
+  // Call Transcripts (conversation history)
+  call_transcripts: `
+    CREATE TABLE IF NOT EXISTS call_transcripts (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL,
+      speaker TEXT NOT NULL CHECK(speaker IN ('customer', 'operator')),
+      text TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      sequence_order INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
+    )
+  `,
+
+  // Call Coaching History (AXTRA Copilot data)
+  call_coaching: `
+    CREATE TABLE IF NOT EXISTS call_coaching (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL,
+      analysis_id INTEGER NOT NULL,
+      card_1_title TEXT,
+      card_1_detail TEXT,
+      card_1_action TEXT,
+      card_1_status TEXT,
+      card_2_title TEXT,
+      card_2_detail TEXT,
+      card_2_action TEXT,
+      card_2_status TEXT,
+      card_3_title TEXT,
+      card_3_detail TEXT,
+      card_3_action TEXT,
+      card_3_status TEXT,
+      script_summary TEXT,
+      script_suggestion TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
+    )
+  `,
+
+  // Call Summaries (post-call analysis)
+  call_summaries: `
+    CREATE TABLE IF NOT EXISTS call_summaries (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL UNIQUE,
+      summary TEXT NOT NULL,
+      key_points TEXT, -- JSON array of key points
+      strengths TEXT, -- JSON array of operator strengths
+      improvements TEXT, -- JSON array of improvement areas
+      customer_satisfaction INTEGER CHECK(customer_satisfaction BETWEEN 1 AND 5),
+      resolution_status TEXT CHECK(resolution_status IN ('resolved', 'pending', 'escalated', 'unresolved')),
+      coaching_effectiveness INTEGER CHECK(coaching_effectiveness BETWEEN 1 AND 5),
+      generated_by TEXT DEFAULT 'mock', -- 'mock' or 'ai' to track if using mock or real AI
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
+    )
+  `,
 };
 
 /**

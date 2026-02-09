@@ -176,6 +176,30 @@ room.on(RoomEvent.DataReceived, (payload) => {
 });
 ```
 
+### 6. Ending Call & Viewing Summary
+
+```typescript
+// User clicks "End Call"
+const handleEndCall = async () => {
+  const result = await endCallAndSave();
+  
+  if (result) {
+    // Show CallSummaryModal with:
+    // - Overview: Summary, scores, strengths, improvements
+    // - Transcript: Full conversation history
+    // - Coaching History: All coaching cards received
+    setShowSummary(true);
+  }
+};
+```
+
+**What happens on the backend:**
+1. Save call session (duration, turns, sentiment, score)
+2. Save all transcripts
+3. Save coaching history
+4. Generate summary (mock AI currently)
+5. Mark simulation as "completed"
+
 ---
 
 ## Code Structure
@@ -185,10 +209,12 @@ room.on(RoomEvent.DataReceived, (payload) => {
 | File | Purpose |
 |------|---------|
 | `src/lib/livekit.ts` | LiveKit client utilities |
-| `src/stores/useLiveKitStore.ts` | Voice call state + coaching data |
+| `src/stores/useLiveKitStore.ts` | Voice call state + coaching history |
 | `src/components/livekit/` | LiveKit UI components |
-| `src/components/livekit/AxtraCopilot.tsx` | **NEW** Coaching UI component |
+| `src/components/livekit/AxtraCopilot.tsx` | Real-time coaching UI |
+| `src/components/livekit/CallSummaryModal.tsx` | Post-call summary |
 | `server/livekit.ts` | Token generation API |
+| `server/call-sessions.ts` | Call saving & summary service |
 
 ### Python Agent Components
 

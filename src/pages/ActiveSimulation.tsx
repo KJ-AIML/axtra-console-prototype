@@ -14,6 +14,7 @@ import {
   LiveKitConnectionStatus,
   LiveKitWelcomeScreen,
   AxtraCopilot,
+  CallSummaryModal,
 } from '../components/livekit';
 import { formatDuration } from '../lib/livekit';
 import { useTranscriptions } from '@livekit/components-react';
@@ -260,14 +261,25 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     connectionError,
     canPlaybackAudio,
     transcripts,
+    coachingHistory,
     connect,
     disconnect,
+    endCallAndSave,
     toggleMute,
     togglePause,
     startAudio,
+    resetState,
   } = useLiveKitStore();
 
   const [showWelcome, setShowWelcome] = useState(true);
+  const [showSummary, setShowSummary] = useState(false);
+  const [summaryData, setSummaryData] = useState<{
+    session: any;
+    transcripts: any[];
+    coachingHistory: any[];
+    summary: any;
+  } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -293,12 +305,58 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     await startAudio();
   }, [startAudio]);
 
-  // Handle end call
-  const handleEndCall = useCallback(() => {
-    disconnect();
+  // Handle end call with summary
+  const handleEndCall = useCallback(async () => {
+    setIsSaving(true);
+    
+    const result = await endCallAndSave();
+    
+    if (result) {
+      setSummaryData(result);
+      setShowSummary(true);
+      showSuccess('Call completed', 'Your practice session has been saved.');
+    } else {
+      showError('Error', 'Failed to save call session');
+      disconnect();
+      setShowWelcome(true);
+    }
+    
+    setIsSaving(false);
+  }, [endCallAndSave, disconnect]);
+
+  // Handle close summary modal
+  const handleCloseSummary = useCallback(() => {
+    setShowSummary(false);
+    setSummaryData(null);
     setShowWelcome(true);
-    showSuccess('Call ended', 'Your practice session has been saved.');
-  }, [disconnect]);
+    resetState();
+  }, [resetState]);
+
+  // Handle retry - restart same scenario
+  const handleRetry = useCallback(() => {
+    setShowSummary(false);
+    setSummaryData(null);
+    setShowWelcome(true);
+    resetState();
+  }, [resetState]);
+
+  // Show summary modal
+  if (showSummary) {
+    return (
+      <div className="h-full flex flex-col bg-white border-l border-r border-gray-200">
+        <CallSummaryModal
+          isOpen={showSummary}
+          onClose={handleCloseSummary}
+          onRetry={handleRetry}
+          session={summaryData?.session || null}
+          transcripts={summaryData?.transcripts || []}
+          coachingHistory={summaryData?.coachingHistory || []}
+          summary={summaryData?.summary || null}
+          isLoading={isSaving}
+        />
+      </div>
+    );
+  }
 
   // Show welcome screen before call starts
   if (showWelcome || (!isConnected && !isConnecting)) {

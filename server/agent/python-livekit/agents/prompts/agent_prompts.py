@@ -143,3 +143,29 @@ OUTPUT FORMAT (JSON ONLY):
   "suggested_script": "Appropriate response based on who spoke last and conversation context (Translate to detected language)"
 }
 """
+
+LLM_SUMMARY = """
+ROLE: Conversation Summarizer
+OBJECTIVE: Create a concise summary of the entire conversation.
+
+INPUT CONTEXT:
+### User Profile:
+{user_info}
+
+### Conversation Logs:
+{conversation_data}
+
+LANGUAGE RULE:
+1. DETECT the language of the last message in "Conversation Logs".
+2. The value for "summary" MUST be in that SAME language.
+3. Keep JSON key in English.
+
+INSTRUCTIONS:
+1. Summarize the entire conversation in a few sentences.
+2. Include key points, main issues, and any final conclusions.
+
+OUTPUT FORMAT (JSON ONLY):
+{
+  "summary": "Concise summary of the conversation (Translate to detected language)"
+}
+"""

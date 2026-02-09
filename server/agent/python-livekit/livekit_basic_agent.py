@@ -1,32 +1,31 @@
 import os
 from datetime import datetime
-from pyexpat import model
 
 from dotenv import load_dotenv
 from google.genai import types
 from livekit import agents
 from livekit.agents import Agent, AgentSession, RunContext
 from livekit.agents.llm import function_tool
-from livekit.plugins import deepgram, google, openai, silero
+from livekit.plugins import google
 
 from prompts import CALLER_INSTRUCTIONS
 
 # Load environment variables
 load_dotenv(".env")
 
+
 class Assistant(Agent):
     """Basic voice assistant"""
 
     def __init__(self):
-        super().__init__(
-            instructions=CALLER_INSTRUCTIONS
-        )
+        super().__init__(instructions=CALLER_INSTRUCTIONS)
 
     @function_tool
     async def get_current_date_and_time(self, context: RunContext) -> str:
         """Get the current date and time."""
         current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
         return f"The current date and time is {current_datetime}"
+
 
 async def entrypoint(ctx: agents.JobContext):
     """Entry point for the agent."""
@@ -53,12 +52,13 @@ async def entrypoint(ctx: agents.JobContext):
     session = AgentSession(
         llm=models,
     )
+
     @session.on("user_input_transcribed")
     def on_transcript(transcript):
         # transcript.transcript คือข้อความ
         # transcript.is_final บอกว่าจบประโยคหรือยัง
         if not transcript.is_final:
-            print(f"กำลังพูด: {transcript.transcript}") 
+            print(f"กำลังพูด: {transcript.transcript}")
         else:
             print(f"จบประโยค (Final): {transcript.transcript}")
 
@@ -68,10 +68,8 @@ async def entrypoint(ctx: agents.JobContext):
         print(f"\n[User Log]: {msg.content}\n")
 
     # Start the session
-    await session.start(
-        room=ctx.room,
-        agent=Assistant()
-    )
+    await session.start(room=ctx.room, agent=Assistant())
+
 
 if __name__ == "__main__":
     # Run the agent

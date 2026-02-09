@@ -208,7 +208,7 @@ if time_since_last >= 30:  # Time threshold (seconds)
          END
 ```
 
-### Data Flow
+### Data Flow (During Call)
 
 ```
 1. Customer speaks
@@ -228,6 +228,32 @@ if time_since_last >= 30:  # Time threshold (seconds)
 8. Supervisor publishes via LiveKit data channel
    ↓
 9. Frontend receives and displays coaching
+```
+
+### Post-Call Data Flow
+
+```
+1. User clicks "End Call"
+   ↓
+2. Frontend: endCallAndSave()
+   - Disconnect from LiveKit room
+   - Get final sentiment from coaching history
+   - POST /api/calls/complete
+   ↓
+3. Backend: completeCallSession()
+   - Save call session (duration, turns, sentiment, score)
+   - Save all transcripts
+   - Save coaching history
+   - Generate summary (mock AI for now)
+   - Update user_scenarios to "completed"
+   ↓
+4. Frontend receives response
+   - Show CallSummaryModal
+   - Display 3 tabs: Overview, Transcript, Coaching History
+   ↓
+5. User closes modal
+   - resetState() clears local state
+   - Back to welcome screen
 ```
 
 ---
@@ -351,7 +377,19 @@ Frontend receives → Updates AxtraCopilot UI
 ─────────────────────────────────────
 User clicks "End Call"
     ↓
-Room disconnects, call ended
+useLiveKitStore.endCallAndSave()
+    ↓
+POST /api/calls/complete (transcripts + coaching history)
+    ↓
+Server generates summary, saves all data
+    ↓
+Update user_scenarios to "completed"
+    ↓
+Show CallSummaryModal
+    ↓
+User clicks "Done"
+    ↓
+resetState(), back to welcome screen
 ```
 
 ---
@@ -368,7 +406,11 @@ axtra-console-prototype/
 │   │   ├── ErrorBoundary.tsx     # Error handling
 │   │   ├── livekit/              # LiveKit components
 │   │   │   ├── LiveKitTranscript.tsx
-│   │   │   └── AxtraCopilot.tsx  # NEW: Coaching UI
+│   │   │   ├── LiveKitCallControls.tsx
+│   │   │   ├── LiveKitConnectionStatus.tsx
+│   │   │   ├── LiveKitWelcomeScreen.tsx
+│   │   │   ├── AxtraCopilot.tsx       # Real-time coaching UI
+│   │   │   └── CallSummaryModal.tsx   # Post-call summary
 │   │   └── ui/                   # UI primitives
 │   │
 │   ├── pages/                    # Route pages
@@ -399,15 +441,19 @@ axtra-console-prototype/
 │   ├── dashboard.ts              # Dashboard service
 │   ├── simulations.ts            # Simulation service
 │   ├── livekit.ts                # LiveKit token generation
+│   ├── call-sessions.ts          # Call session & summary
 │   ├── seed-demo.ts              # Demo data seeder
 │   └── agent/                    # AI Agent services
 │       └── python-livekit/       # Python voice agent
-│           ├── livekit_agent_langchain.py  # NEW: Main entry
-│           ├── agents/           # NEW: Agent components
+│           ├── livekit_agent_langchain.py  # Main entry
+│           ├── livekit_basic_agent.py      # Basic agent
+│           ├── agents/                     # Agent components
 │           │   ├── agent_manager/
 │           │   │   └── agent.py
 │           │   ├── prompts/
 │           │   │   └── agent_prompts.py
+│           │   ├── schemas/
+│           │   │   └── types.py
 │           │   └── workflow/
 │           │       ├── build.py
 │           │       └── nodes.py

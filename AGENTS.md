@@ -28,6 +28,9 @@ Essential information for AI coding agents working on the Axtra Console project.
 - `src/main.tsx` - Application entry point
 - `server/index.ts` - API server & route handlers
 - `server/db.ts` - Database configuration (Turso/libsql)
+- `server/call-sessions.ts` - Call session service (save calls, transcripts, coaching)
+- `src/components/livekit/CallSummaryModal.tsx` - Post-call summary UI
+- `src/stores/useLiveKitStore.ts` - Voice call state + coaching history
 - `.env.local` - Environment variables
 
 ---
@@ -72,7 +75,8 @@ axtra-console-prototype/
 │   │   │   ├── LiveKitCallControls.tsx
 │   │   │   ├── LiveKitConnectionStatus.tsx
 │   │   │   ├── LiveKitWelcomeScreen.tsx
-│   │   │   └── AxtraCopilot.tsx   # Real-time coaching UI
+│   │   │   ├── AxtraCopilot.tsx       # Real-time coaching UI
+│   │   │   └── CallSummaryModal.tsx   # Post-call summary
 │   │   └── ui/               # UI primitives (Button, Toast, etc.)
 │   ├── pages/                # Route pages
 │   │   ├── Login.tsx
@@ -121,6 +125,7 @@ axtra-console-prototype/
 │   ├── dashboard.ts          # Dashboard data service
 │   ├── simulations.ts        # Simulation service
 │   ├── livekit.ts            # LiveKit token generation
+│   ├── call-sessions.ts      # Call session & summary service
 │   ├── seed-demo.ts          # Demo data seeder
 │   └── agent/                # AI Agent services
 │       └── python-livekit/   # Python voice agent + AXTRA Copilot
@@ -131,6 +136,8 @@ axtra-console-prototype/
 │           │   │   └── agent.py
 │           │   ├── prompts/
 │           │   │   └── agent_prompts.py
+│           │   ├── schemas/
+│           │   │   └── types.py
 │           │   └── workflow/
 │           │       ├── build.py
 │           │       └── nodes.py
@@ -826,6 +833,72 @@ Enable `DEBUG_MODE=true` in `server/agent/python-livekit/.env` to see:
 ```bash
 DEBUG_MODE=true uv run python livekit_agent_langchain.py dev
 ```
+
+---
+
+## Call Session & Post-Call Summary
+
+After completing a voice call, the system automatically saves all data and generates a summary.
+
+### Data Flow
+
+```
+User clicks "End Call"
+    ↓
+LiveKitStore.endCallAndSave()
+    ↓
+POST /api/calls/complete
+    ↓
+Server saves:
+  - Call session (duration, turns, sentiment, score)
+  - Transcripts (all conversation turns)
+  - Coaching history (all 3-card analyses)
+  - Summary (mock AI for now)
+    ↓
+Updates user_scenarios to "completed"
+    ↓
+Shows CallSummaryModal with 3 tabs:
+  - Overview: Summary, scores, strengths, improvements
+  - Transcript: Full conversation history
+  - Coaching History: All coaching cards
+```
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `call_sessions` | Call metadata (user, scenario, duration, score) |
+| `call_transcripts` | All conversation turns (speaker, text, timestamp) |
+| `call_coaching` | Coaching history (3 cards + script per analysis) |
+| `call_summaries` | Post-call summary (strengths, improvements, satisfaction) |
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/calls` | Create call session |
+| POST | `/api/calls/complete` | End call, save all data, generate summary |
+| GET | `/api/calls/:id` | Get call details (session + transcripts + coaching + summary) |
+| GET | `/api/calls/history` | Get user's call history |
+
+### Mock Summary Generator
+
+Currently uses a simple keyword-based algorithm to generate:
+- Customer satisfaction (1-5)
+- Resolution status (resolved/escalated/pending/unresolved)
+- Key points
+- Strengths
+- Areas for improvement
+
+**To replace with real AI:** Edit `generateMockSummary()` in `server/call-sessions.ts`
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| `CallSummaryModal` | Post-call summary UI with 3 tabs |
+| `useLiveKitStore.endCallAndSave()` | Handles call ending and data saving |
+| `useLiveKitStore.resetState()` | Clears state after viewing summary |
 
 ---
 

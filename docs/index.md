@@ -265,14 +265,24 @@ npm run test:coverage
 | GET | `/api/simulations/stats` | User stats |
 | GET | `/api/simulations/recommended` | Recommended |
 
+### Call Session Routes
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/calls` | Create call session |
+| POST | `/api/calls/complete` | End call & save data |
+| GET | `/api/calls/:id` | Get call details |
+| GET | `/api/calls/history` | Get call history |
+
 ---
 
 ## 📚 More Documentation
 
 - **Architecture** → [architecture.md](./architecture.md)
+- **LiveKit Integration** → [livekit.md](./livekit.md)
 - **Design System** → [design_system.md](./design_system.md)
 - **Style Guide** → [style-guide.md](./style-guide.md)
 - **Contributing** → [contributing.md](./contributing.md)
+- **Roadmap** → [roadmap.md](./roadmap.md)
 - **Agent Guide** → [../AGENTS.md](../AGENTS.md)
 
 ---

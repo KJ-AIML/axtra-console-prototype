@@ -43,6 +43,16 @@ export interface CoachingData {
   script: CoachingScript;
 }
 
+export interface CallSummaryData {
+  summary: string;
+  keyPoints: string[];
+  strengths: string[];
+  improvements: string[];
+  customerSatisfaction: number;
+  resolutionStatus: 'resolved' | 'pending' | 'escalated' | 'unresolved';
+  coachingEffectiveness: number;
+}
+
 interface LiveKitState {
   // Room
   room: Room | null;
@@ -59,21 +69,31 @@ interface LiveKitState {
   // Call state
   isPaused: boolean;
   callDuration: number;
+  callSessionId: string | null;
+  scenarioId: string | null;
   
   // Transcripts
   transcripts: TranscriptEntry[];
   
   // Coaching data (from AXTRA Copilot)
   coachingData: CoachingData | null;
+  coachingHistory: CoachingData[]; // All coaching updates
   
   // Actions
   connect: (scenarioId: string) => Promise<void>;
   disconnect: () => void;
+  endCallAndSave: () => Promise<{
+    session: any;
+    transcripts: TranscriptEntry[];
+    coachingHistory: CoachingData[];
+    summary: CallSummaryData;
+  } | null>;
   toggleMute: () => Promise<void>;
   togglePause: () => void;
   startAudio: () => Promise<void>;
   addTranscript: (entry: Omit<TranscriptEntry, 'id'>) => void;
   updateTranscript: (index: number, text: string) => void;
+  resetState: () => void;
 }
 
 let durationInterval: NodeJS.Timeout | null = null;
@@ -90,8 +110,11 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
   canPlaybackAudio: false,
   isPaused: false,
   callDuration: 0,
+  callSessionId: null,
+  scenarioId: null,
   transcripts: [],
   coachingData: null,
+  coachingHistory: [],
 
   // Connect to room (creates room, agent will auto-join from server)
   connect: async (scenarioId: string) => {
@@ -190,7 +213,14 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
             };
             
             console.log('✅ Setting coaching data:', coachingData);
-            set({ coachingData });
+            
+            // Add to coaching history and update current
+            const { coachingHistory } = get();
+            const updatedHistory = [...coachingHistory, coachingData];
+            set({ 
+              coachingData,
+              coachingHistory: updatedHistory
+            });
             
             // Also log to console for debugging
             console.log('%c[AXTRA Copilot]', 'color: #4F46E5; font-weight: bold; font-size: 14px;', {
@@ -228,9 +258,37 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
         }
       }, 1000);
       
+      // Create call session in backend
+      try {
+        const token = localStorage.getItem('axtra_token');
+        const sessionResponse = await fetch('/api/calls', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': token ? `Bearer ${token}` : '',
+          },
+          body: JSON.stringify({
+            scenarioId,
+            roomName,
+          }),
+        });
+        
+        if (sessionResponse.ok) {
+          const sessionData = await sessionResponse.json();
+          set({ callSessionId: sessionData.data.session.id });
+          console.log('[LiveKit] Call session created:', sessionData.data.session.id);
+        } else {
+          const errorData = await sessionResponse.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('[LiveKit] Failed to create call session:', errorData);
+        }
+      } catch (e) {
+        console.error('[LiveKit] Failed to create call session:', e);
+      }
+      
       set({ 
         room, 
         roomName,
+        scenarioId,
         isConnected: true, 
         isConnecting: false,
         isMuted: false,
@@ -331,5 +389,153 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
     const updated = [...transcripts];
     updated[index] = { ...updated[index], text };
     set({ transcripts: updated });
+  },
+  
+  // End call and save all data to backend
+  endCallAndSave: async () => {
+    const state = get();
+    const { room, callSessionId, callDuration, transcripts, coachingHistory } = state;
+    
+    if (!callSessionId) {
+      console.error('[LiveKit] No call session to save');
+      get().disconnect();
+      return null;
+    }
+    
+    // Disconnect from room first
+    if (room) {
+      disconnectFromRoom(room);
+    }
+    
+    if (durationInterval) {
+      clearInterval(durationInterval);
+      durationInterval = null;
+    }
+    
+    // Remove audio element
+    const el = document.getElementById('agent-audio');
+    if (el) el.remove();
+    
+    // Get final sentiment from coaching history
+    let customerSentiment = 'neutral';
+    if (coachingHistory.length > 0) {
+      const lastCoaching = coachingHistory[coachingHistory.length - 1];
+      const emotionCard = lastCoaching.cards[0];
+      if (emotionCard) {
+        switch (emotionCard.status) {
+          case 'danger': customerSentiment = 'angry'; break;
+          case 'warning': customerSentiment = 'frustrated'; break;
+          case 'success': customerSentiment = 'happy'; break;
+          default: customerSentiment = 'neutral';
+        }
+      }
+    }
+    
+    try {
+      console.log('[LiveKit] Saving call session...');
+      
+      // Save to backend
+      const token = localStorage.getItem('axtra_token');
+      const response = await fetch('/api/calls/complete', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          callId: callSessionId,
+          durationSeconds: callDuration,
+          totalTurns: transcripts.length,
+          customerSentiment,
+          transcripts: transcripts.map(t => ({
+            speaker: t.speaker,
+            text: t.text,
+            timestamp: t.timestamp,
+          })),
+          coachingHistory: coachingHistory.map(c => ({
+            analysis_id: c.analysisId,
+            cards: c.cards,
+            script: c.script,
+          })),
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[LiveKit] Save failed:', response.status, errorText);
+        throw new Error(`Failed to save call session: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('[LiveKit] Call saved successfully:', result);
+      
+      // Clear local state but keep the data for the summary modal
+      set({
+        room: null,
+        isConnected: false,
+        isConnecting: false,
+        isMuted: false,
+        isAgentSpeaking: false,
+        canPlaybackAudio: false,
+        isPaused: false,
+        connectionError: null,
+      });
+      
+      return {
+        session: result.data.session,
+        transcripts,
+        coachingHistory,
+        summary: result.data.summary,
+      };
+      
+    } catch (error) {
+      console.error('[LiveKit] Failed to save call:', error);
+      
+      // Still disconnect even if save failed
+      set({
+        room: null,
+        isConnected: false,
+        isConnecting: false,
+        isMuted: false,
+        isAgentSpeaking: false,
+        canPlaybackAudio: false,
+        isPaused: false,
+        callDuration: 0,
+        callSessionId: null,
+        scenarioId: null,
+        transcripts: [],
+        coachingData: null,
+        coachingHistory: [],
+        connectionError: null,
+      });
+      
+      return null;
+    }
+  },
+  
+  // Reset state completely (after viewing summary)
+  resetState: () => {
+    if (durationInterval) {
+      clearInterval(durationInterval);
+      durationInterval = null;
+    }
+    
+    set({
+      room: null,
+      isConnected: false,
+      isConnecting: false,
+      roomName: null,
+      isMuted: false,
+      isAgentSpeaking: false,
+      canPlaybackAudio: false,
+      isPaused: false,
+      callDuration: 0,
+      callSessionId: null,
+      scenarioId: null,
+      transcripts: [],
+      coachingData: null,
+      coachingHistory: [],
+      connectionError: null,
+    });
   },
 }));
