@@ -295,20 +295,39 @@ class SupervisorProcess:
         # Log detailed workflow input
         debug_log("WORKFLOW_INPUT", f"Analysis #{self.analysis_count} Input:", workflow_input)
         
-        # Print conversation turns for debugging
-        print(f"\n{'='*60}")
-        print(f"[WORKFLOW INPUT] Analysis #{self.analysis_count}")
-        print(f"{'='*60}")
-        print(f"User Info: {json.dumps(workflow_input['user_info'], ensure_ascii=False)}")
-        print(f"Context Summary ({len(workflow_input['context_summary'])} summaries):")
-        for i, summary in enumerate(workflow_input['context_summary'][-3:], 1):
-            print(f"  {i}. {summary[:60]}...")
-        print(f"\nConversation Data ({len(workflow_input['conversation_data'])} turns):")
-        for turn in workflow_input['conversation_data']:
+        # Print COMPLETE workflow input data (always visible for clarity)
+        print(f"\n{'='*70}")
+        print(f"[WORKFLOW INPUT - COMPLETE] Analysis #{self.analysis_count}")
+        print(f"{'='*70}")
+        
+        # User Info Section
+        print(f"\n📋 USER INFO:")
+        print(f"{json.dumps(workflow_input['user_info'], indent=2, ensure_ascii=False)}")
+        
+        # Context Summary Section
+        print(f"\n📚 CONTEXT SUMMARY ({len(workflow_input['context_summary'])} items):")
+        if workflow_input['context_summary']:
+            for i, summary in enumerate(workflow_input['context_summary'], 1):
+                preview = summary[:100] + "..." if len(summary) > 100 else summary
+                print(f"  {i}. {preview}")
+        else:
+            print("  (empty)")
+        
+        # Conversation Data Section
+        print(f"\n💬 CONVERSATION DATA ({len(workflow_input['conversation_data'])} turns):")
+        total_chars = 0
+        for i, turn in enumerate(workflow_input['conversation_data'], 1):
             speaker = turn.get('speaker', 'Unknown')
-            text = turn.get('text', '')[:80]
-            print(f"  [{speaker}]: {text}...")
-        print(f"{'='*60}\n")
+            text = turn.get('text', '')
+            total_chars += len(text)
+            # Show full text but truncate if extremely long
+            preview = text[:200] + "... (truncated)" if len(text) > 200 else text
+            print(f"  {i}. [{speaker}]: {preview}")
+        print(f"\n  Total characters: {total_chars}")
+        
+        print(f"\n{'='*70}")
+        print(f"[WORKFLOW] Invoking LangGraph with above input...")
+        print(f"{'='*70}\n")
         
         try:
             # Run workflow (blocking call, run in thread pool)
