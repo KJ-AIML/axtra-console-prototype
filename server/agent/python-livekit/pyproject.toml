@@ -18,6 +18,8 @@ dependencies = [
     "langchain-google-genai>=2.1.12",
     "torch>=2.8.0",
     "ruff>=0.14.14",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
 ]
 
 [project.optional-dependencies]
@@ -60,6 +62,9 @@ all = [
     "livekit-plugins-assemblyai>=1.0.0",
     "livekit-plugins-azure>=1.0.0",
 ]
+
+[project.scripts]
+summary-api = "api.server:main"
 
 [tool.black]
 line-length = 100
