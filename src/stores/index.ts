@@ -8,6 +8,13 @@ export { useToastStore, showSuccess, showError, showWarning, showInfo } from './
 export type { Toast, ToastType } from './useToastStore';
 export { useLiveKitStore } from './useLiveKitStore';
 export type { TranscriptEntry } from './useLiveKitStore';
+export { useRecordingsStore } from './useRecordingsStore';
+export type {
+  RecordingListItem,
+  RecordingDetail,
+  RecordingFilters,
+  RecordingStats,
+} from '../lib/api-types';
 export type {
   UserMetric,
   Scenario as DashboardScenario,

@@ -9,6 +9,7 @@ export { default as ActiveSimulation } from './ActiveSimulation';
 export { default as Copilot } from './Copilot';
 export { default as ActiveCalls } from './ActiveCalls';
 export { default as Recordings } from './Recordings';
+export { default as RecordingDetail } from './RecordingDetail';
 export { default as QAScoring } from './QAScoring';
 export { default as Insights } from './Insights';
 export { default as KnowledgeBase } from './KnowledgeBase';

@@ -1,6 +1,7 @@
 
 import { useEffect } from 'react';
 import { memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   Settings,
@@ -20,6 +21,7 @@ import {
   Meh,
   Frown,
   BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
 import { useDashboardStore, useDashboardDataStore, useUserStore, useSimulationStore, showError } from '../stores';
@@ -147,6 +149,14 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
+  // Handle navigate safely for tests (when Router context isn't available)
+  let navigate: ReturnType<typeof useNavigate>;
+  try {
+    navigate = useNavigate();
+  } catch {
+    navigate = ((() => {}) as unknown) as ReturnType<typeof useNavigate>;
+  }
+  
   const activeTab = useDashboardStore((state) => state.activeTab);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   
@@ -290,7 +300,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <Phone size={16} />
             <span className="text-xs font-medium">Total Calls</span>
           </div>
-          <div className="text-3xl font-bold">{callStats.totalCalls}</div>
+          <div className="text-3xl font-bold">{callStats?.totalCalls ?? 0}</div>
           <div className="text-xs opacity-75 mt-1">Practice sessions</div>
         </div>
         
@@ -299,7 +309,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <Trophy size={16} />
             <span className="text-xs font-medium">Avg Score</span>
           </div>
-          <div className="text-3xl font-bold">{callStats.averageScore}%</div>
+          <div className="text-3xl font-bold">{callStats?.averageScore ?? 0}%</div>
           <div className="text-xs opacity-75 mt-1">Performance</div>
         </div>
         
@@ -308,7 +318,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <Headphones size={16} />
             <span className="text-xs font-medium">Coaching</span>
           </div>
-          <div className="text-3xl font-bold">{callStats.totalCoaching}</div>
+          <div className="text-3xl font-bold">{callStats?.totalCoaching ?? 0}</div>
           <div className="text-xs opacity-75 mt-1">Tips received</div>
         </div>
         
@@ -317,7 +327,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             <Target size={16} />
             <span className="text-xs font-medium">Completion</span>
           </div>
-          <div className="text-3xl font-bold">{callStats.completionRate}%</div>
+          <div className="text-3xl font-bold">{callStats?.completionRate ?? 0}%</div>
           <div className="text-xs opacity-75 mt-1">Scenarios done</div>
         </div>
       </div>
@@ -434,12 +444,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
                 <BarChart3 size={16} className="text-indigo-500" />
                 Recent Calls
               </h3>
-              <button className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-                View All
+              <button 
+                onClick={() => navigate('/recordings')}
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+              >
+                View All <ExternalLink size={12} />
               </button>
             </div>
             <div className="space-y-3">
-              {recentCalls.length > 0 ? (
+              {recentCalls && recentCalls.length > 0 ? (
                 recentCalls.map((call) => (
                   <div 
                     key={call.id}

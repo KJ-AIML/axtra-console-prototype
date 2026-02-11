@@ -234,6 +234,29 @@ export const SCHEMA = {
       FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
     )
   `,
+  qa_scores: `
+    CREATE TABLE IF NOT EXISTS qa_scores (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL,
+      scorer_id TEXT NOT NULL,
+      scored_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      professionalism INTEGER CHECK(professionalism BETWEEN 1 AND 5),
+      empathy INTEGER CHECK(empathy BETWEEN 1 AND 5),
+      problem_solving INTEGER CHECK(problem_solving BETWEEN 1 AND 5),
+      script_adherence INTEGER CHECK(script_adherence BETWEEN 1 AND 5),
+      tone_manner INTEGER CHECK(tone_manner BETWEEN 1 AND 5),
+      overall_score INTEGER CHECK(overall_score BETWEEN 0 AND 100),
+      strengths TEXT, -- Free text strengths
+      improvements TEXT, -- Free text improvements
+      general_notes TEXT, -- General comments
+      status TEXT CHECK(status IN ('draft', 'submitted', 'approved')) DEFAULT 'draft',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (scorer_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(call_id, scorer_id) -- One score per scorer per call
+    )
+  `,
 };
 
 // Indexes for query performance
@@ -265,6 +288,14 @@ const INDEXES = [
   {
     name: 'idx_qa_highlights_user',
     sql: `CREATE INDEX IF NOT EXISTS idx_qa_highlights_user ON qa_highlights(user_id, created_at DESC)`
+  },
+  {
+    name: 'idx_qa_scores_call_scorer',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qa_scores_call_scorer ON qa_scores(call_id, scorer_id)`
+  },
+  {
+    name: 'idx_qa_scores_scorer_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qa_scores_scorer_status ON qa_scores(scorer_id, status)`
   },
 ];
 

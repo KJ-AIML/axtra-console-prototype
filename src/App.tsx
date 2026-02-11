@@ -15,6 +15,7 @@ import {
   Copilot,
   ActiveCalls,
   Recordings,
+  RecordingDetail,
   QAScoring,
   Insights,
   KnowledgeBase,
@@ -98,6 +99,7 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
             <Route path="/copilot" element={<Copilot />} />
             <Route path="/active-calls" element={<ActiveCalls />} />
             <Route path="/recordings" element={<Recordings />} />
+            <Route path="/recordings/:id" element={<RecordingDetail />} />
             <Route path="/qa-scoring" element={<QAScoring />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />

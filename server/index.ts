@@ -49,6 +49,22 @@ import {
   getUserCallHistory,
   abandonCallSession,
 } from './call-sessions';
+import {
+  getRecordings,
+  getRecordingDetail,
+  getRecordingStats,
+  deleteRecording,
+  getRecentRecordings,
+} from './recordings';
+import {
+  saveQAScore,
+  getQAScoreForCall,
+  getQASummary,
+  getPendingQAReviews,
+  getQAStats,
+  deleteQAScore,
+  QA_RUBRIC,
+} from './qa-scoring';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -639,6 +655,327 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('Get call history error:', error);
         sendJson(res, 500, { error: 'Failed to get call history' });
+      }
+      return;
+    }
+
+    // ============================================
+    // RECORDINGS ROUTES
+    // ============================================
+    
+    // Get recordings list with filters
+    if (method === 'GET' && segments.length === 1 && segments[0] === 'recordings') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const parsedUrl = parseUrl(req.url || '', true);
+      const query = parsedUrl.query;
+      
+      const filters = {
+        userId: user.id,
+        scenarioId: query.scenario_id as string | undefined,
+        difficulty: query.difficulty as string | undefined,
+        status: (query.status as 'completed' | 'abandoned') || 'completed',
+        dateFrom: query.date_from as string | undefined,
+        dateTo: query.date_to as string | undefined,
+        minScore: query.min_score ? parseInt(query.min_score as string) : undefined,
+        maxScore: query.max_score ? parseInt(query.max_score as string) : undefined,
+        searchQuery: query.search as string | undefined,
+      };
+      
+      const page = query.page ? parseInt(query.page as string) : 1;
+      const limit = query.limit ? parseInt(query.limit as string) : 20;
+      const sortBy = (query.sort_by as string) || 'started_at';
+      const sortOrder = (query.sort_order as 'asc' | 'desc') || 'desc';
+      
+      try {
+        const result = await getRecordings(filters, page, limit, sortBy, sortOrder);
+        sendJson(res, 200, { success: true, data: result });
+      } catch (error) {
+        console.error('Get recordings error:', error);
+        sendJson(res, 500, { error: 'Failed to get recordings' });
+      }
+      return;
+    }
+    
+    // Get single recording detail
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'recordings') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const recordingId = segments[1];
+      
+      try {
+        const recording = await getRecordingDetail(recordingId);
+        
+        if (!recording) {
+          sendJson(res, 404, { error: 'Recording not found' });
+          return;
+        }
+        
+        // Verify user owns this recording
+        if (recording.user_id !== user.id) {
+          sendJson(res, 403, { error: 'Access denied' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, data: recording });
+      } catch (error) {
+        console.error('Get recording detail error:', error);
+        sendJson(res, 500, { error: 'Failed to get recording' });
+      }
+      return;
+    }
+    
+    // Delete recording
+    if (method === 'DELETE' && segments.length === 2 && segments[0] === 'recordings') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const recordingId = segments[1];
+      
+      try {
+        const deleted = await deleteRecording(recordingId, user.id);
+        
+        if (!deleted) {
+          sendJson(res, 404, { error: 'Recording not found or access denied' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, message: 'Recording deleted' });
+      } catch (error) {
+        console.error('Delete recording error:', error);
+        sendJson(res, 500, { error: 'Failed to delete recording' });
+      }
+      return;
+    }
+    
+    // Get recording stats
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'recordings' && segments[1] === 'stats') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const stats = await getRecordingStats(user.id);
+        sendJson(res, 200, { success: true, data: stats });
+      } catch (error) {
+        console.error('Get recording stats error:', error);
+        sendJson(res, 500, { error: 'Failed to get stats' });
+      }
+      return;
+    }
+
+    // ============================================
+    // QA SCORING ROUTES
+    // ============================================
+    
+    // Get QA rubric
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'rubric') {
+      sendJson(res, 200, { success: true, data: { rubric: QA_RUBRIC } });
+      return;
+    }
+    
+    // Get QA score for a call
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'scores') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const callId = segments[2];
+      
+      try {
+        const score = await getQAScoreForCall(callId, user.id);
+        sendJson(res, 200, { success: true, data: { score } });
+      } catch (error) {
+        console.error('Get QA score error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA score' });
+      }
+      return;
+    }
+    
+    // Save QA score
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'scores') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req);
+        
+        // Validate required fields
+        if (!body.call_id || !body.professionalism || !body.empathy || !body.problem_solving ||
+            !body.script_adherence || !body.tone_manner || !body.overall_score) {
+          sendJson(res, 400, { error: 'Missing required score fields' });
+          return;
+        }
+        
+        const score = await saveQAScore({
+          ...body,
+          scorer_id: user.id,
+        });
+        
+        sendJson(res, 200, { success: true, data: { score } });
+      } catch (error) {
+        console.error('Save QA score error:', error);
+        sendJson(res, 500, { error: 'Failed to save QA score' });
+      }
+      return;
+    }
+    
+    // Get QA summary (with AI comparison)
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'summary') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const callId = segments[2];
+      
+      try {
+        const summary = await getQASummary(callId);
+        sendJson(res, 200, { success: true, data: summary });
+      } catch (error) {
+        console.error('Get QA summary error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA summary' });
+      }
+      return;
+    }
+    
+    // Get pending QA reviews
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'pending') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const pending = await getPendingQAReviews(user.id);
+        sendJson(res, 200, { success: true, data: { pending } });
+      } catch (error) {
+        console.error('Get pending QA error:', error);
+        sendJson(res, 500, { error: 'Failed to get pending reviews' });
+      }
+      return;
+    }
+    
+    // Get QA stats
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'stats') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const stats = await getQAStats(user.id);
+        sendJson(res, 200, { success: true, data: stats });
+      } catch (error) {
+        console.error('Get QA stats error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA stats' });
+      }
+      return;
+    }
+    
+    // Delete QA score
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'scores') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const scoreId = segments[2];
+      
+      try {
+        const deleted = await deleteQAScore(scoreId, user.id);
+        
+        if (!deleted) {
+          sendJson(res, 404, { error: 'Score not found or access denied' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, message: 'Score deleted' });
+      } catch (error) {
+        console.error('Delete QA score error:', error);
+        sendJson(res, 500, { error: 'Failed to delete score' });
       }
       return;
     }
