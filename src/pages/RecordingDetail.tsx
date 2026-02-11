@@ -3,7 +3,7 @@
  * View full recording with transcript, coaching history, and summary
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -21,17 +21,32 @@ import {
   Heart,
   Scale,
   Target,
+  Headphones,
+  Volume2,
+  Mic,
+  Bot,
+  User,
 } from 'lucide-react';
 import { useRecordingsStore } from '../stores';
 import Button from '../components/ui/Button';
 import { cn } from '../utils/classnames';
 import type { CoachingCard, TranscriptEntry } from '../lib/api-types';
 
+type AudioChannel = 'both' | 'operator' | 'agent';
+
 const RecordingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'transcript' | 'coaching'>('overview');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [audioChannel, setAudioChannel] = useState<AudioChannel>('both');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [audioObjectUrl, setAudioObjectUrl] = useState<string>('');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const audioObjectUrlRef = useRef('');
   
   const {
     selectedRecording,
@@ -83,6 +98,109 @@ const RecordingDetail: React.FC = () => {
     };
     return colors[sentiment] || 'text-gray-600 bg-gray-50';
   };
+
+  // Fetch audio with auth and create object URL
+  const loadAudio = useCallback(async () => {
+    if (!id) return;
+    
+    setIsLoadingAudio(true);
+    try {
+      // Revoke old URL to prevent memory leak
+      if (audioObjectUrlRef.current) {
+        URL.revokeObjectURL(audioObjectUrlRef.current);
+      }
+      
+      const channel = audioChannel === 'both' ? 'operator' : audioChannel;
+      const token = localStorage.getItem('axtra_token');
+      
+      const response = await fetch(`/api/recordings/${id}/audio?channel=${channel}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Authentication required. Please log in again.');
+        } else if (response.status === 404) {
+          throw new Error('Audio file not found.');
+        }
+        throw new Error(`Failed to load audio: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      audioObjectUrlRef.current = url;
+      setAudioObjectUrl(url);
+      
+      // Auto-play if was playing (use ref to avoid dependency)
+      if (audioRef.current && isPlayingRef.current) {
+        audioRef.current.play().catch(console.error);
+      }
+    } catch (error) {
+      console.error('Failed to load audio:', error);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  }, [id, audioChannel]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  const togglePlay = async () => {
+    if (!audioRef.current) return;
+    
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch (e) {
+        console.error('Failed to play audio:', e);
+      }
+    }
+  };
+
+  // Handle channel change - reload audio with new channel
+  useEffect(() => {
+    if (selectedRecording) {
+      loadAudio();
+    }
+    
+    // Cleanup object URL on unmount
+    return () => {
+      if (audioObjectUrlRef.current) {
+        URL.revokeObjectURL(audioObjectUrlRef.current);
+      }
+    };
+  }, [audioChannel, selectedRecording, loadAudio]);
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+      setIsLoadingAudio(false);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setCurrentTime(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  // Note: Channel toggle is visual-only for now
+  // Full stereo channel manipulation requires more complex Web Audio setup
+  // The audio files play both channels (stereo) by default
 
   // Get score color
   const getScoreColor = (score: number): string => {
@@ -174,6 +292,153 @@ const RecordingDetail: React.FC = () => {
           <button onClick={clearError} className="ml-auto text-rose-400 hover:text-rose-600">
             ×
           </button>
+        </div>
+      )}
+
+      {/* Recording Info */}
+      {selectedRecording?.has_recording && (
+        <div className="bg-indigo-50 rounded-lg border border-indigo-100 p-4 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Mic className="w-5 h-5 text-indigo-600" />
+            <h3 className="font-semibold text-indigo-900">Voice Recording</h3>
+            <span className="text-xs text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+              {selectedRecording.recording_status === 'completed' ? 'Ready' : 'Processing'}
+            </span>
+          </div>
+          
+          {/* File Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="bg-white rounded p-3 border border-indigo-100">
+              <div className="flex items-center gap-2 text-gray-600 mb-1">
+                <User className="w-4 h-4" />
+                <span>Operator (You)</span>
+              </div>
+              <div className="text-xs text-gray-400 font-mono truncate">
+                {selectedRecording.operator_track_url?.split('/').pop() || 'operator.ogg'}
+              </div>
+            </div>
+            <div className="bg-white rounded p-3 border border-indigo-100">
+              <div className="flex items-center gap-2 text-gray-600 mb-1">
+                <Bot className="w-4 h-4" />
+                <span>Customer (AI)</span>
+              </div>
+              <div className="text-xs text-gray-400 font-mono truncate">
+                {selectedRecording.agent_track_url?.split('/').pop() || 'agent.ogg'}
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-xs text-indigo-600 mt-3">
+            Format: OGG (Opus codec) • Two separate tracks • Use channel toggle below to listen
+          </p>
+        </div>
+      )}
+
+      {/* Audio Player */}
+      {selectedRecording?.has_recording && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+          {/* Hidden audio element - only render when URL is ready */}
+          {audioObjectUrl && (
+            <audio
+              ref={audioRef}
+              src={audioObjectUrl}
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={() => setIsPlaying(false)}
+            />
+          )}
+
+          <div className="flex items-center gap-4">
+            {/* Play/Pause Button */}
+            <button
+              onClick={togglePlay}
+              disabled={isLoadingAudio}
+              className={cn(
+                'w-12 h-12 rounded-full flex items-center justify-center transition-colors',
+                isPlaying
+                  ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700',
+                isLoadingAudio && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              {isLoadingAudio ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="w-5 h-5" />
+              ) : (
+                <Play className="w-5 h-5 ml-0.5" />
+              )}
+            </button>
+
+            {/* Progress Bar */}
+            <div className="flex-1">
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>{formatDuration(Math.floor(currentTime))}</span>
+                <span>{formatDuration(Math.floor(duration))}</span>
+              </div>
+            </div>
+
+            {/* Channel Toggle */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setAudioChannel('both')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+                  audioChannel === 'both'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+                title="Listen to both channels"
+              >
+                <Headphones className="w-4 h-4" />
+                Both
+              </button>
+              <button
+                onClick={() => setAudioChannel('operator')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+                  audioChannel === 'operator'
+                    ? 'bg-indigo-100 text-indigo-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+                title="Listen to operator only"
+              >
+                <User className="w-4 h-4" />
+                You
+              </button>
+              <button
+                onClick={() => setAudioChannel('agent')}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+                  audioChannel === 'agent'
+                    ? 'bg-emerald-100 text-emerald-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                )}
+                title="Listen to customer/agent only"
+              >
+                <Bot className="w-4 h-4" />
+                Customer
+              </button>
+            </div>
+          </div>
+
+          {/* File Info */}
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600">
+              <strong>Playing:</strong> {audioChannel === 'operator' ? 'Operator (You)' : audioChannel === 'agent' ? 'Customer (AI)' : 'Both tracks'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Note: Separate track playback requires stereo merge. Currently plays one track at a time.
+            </p>
+          </div>
         </div>
       )}
 

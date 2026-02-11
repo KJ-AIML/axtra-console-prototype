@@ -79,6 +79,12 @@ interface LiveKitState {
   coachingData: CoachingData | null;
   coachingHistory: CoachingData[]; // All coaching updates
   
+  // Recording state (LiveKit Egress)
+  recordingStatus: 'none' | 'starting' | 'recording' | 'stopping' | 'completed' | 'failed';
+  recordingError: string | null;
+  operatorTrackId: string | null;
+  agentTrackId: string | null;
+  
   // Actions
   connect: (scenarioId: string) => Promise<void>;
   disconnect: () => void;
@@ -94,6 +100,10 @@ interface LiveKitState {
   addTranscript: (entry: Omit<TranscriptEntry, 'id'>) => void;
   updateTranscript: (index: number, text: string) => void;
   resetState: () => void;
+  
+  // Recording actions
+  startRecording: () => Promise<void>;
+  stopRecording: () => Promise<void>;
 }
 
 let durationInterval: NodeJS.Timeout | null = null;
@@ -115,6 +125,10 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
   transcripts: [],
   coachingData: null,
   coachingHistory: [],
+  recordingStatus: 'none',
+  recordingError: null,
+  operatorTrackId: null,
+  agentTrackId: null,
 
   // Connect to room (creates room, agent will auto-join from server)
   connect: async (scenarioId: string) => {
@@ -296,6 +310,45 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       
       console.log('[LiveKit] Connected! Waiting for agent to join...');
       
+      // Auto-start recording when agent joins (via track subscription)
+      const checkAndStartRecording = () => {
+        const { room, callSessionId } = get();
+        if (!room || !callSessionId) return;
+        
+        // Find operator's own audio track and agent's audio track
+        const localParticipant = room.localParticipant;
+        const agentParticipant = Array.from(room.remoteParticipants.values()).find(
+          p => p.identity === 'agent' || p.identity.startsWith('agent-')
+        );
+        
+        if (localParticipant && agentParticipant) {
+          const operatorTrack = Array.from(localParticipant.audioTrackPublications.values())[0]?.trackSid;
+          const agentTrack = Array.from(agentParticipant.audioTrackPublications.values())[0]?.trackSid;
+          
+          if (operatorTrack && agentTrack) {
+            set({ 
+              operatorTrackId: operatorTrack, 
+              agentTrackId: agentTrack 
+            });
+            
+            // Auto-start recording
+            get().startRecording();
+          }
+        }
+      };
+      
+      // Check for tracks after a short delay to allow agent to join
+      setTimeout(checkAndStartRecording, 2000);
+      // Also check periodically
+      const checkInterval = setInterval(() => {
+        const { recordingStatus } = get();
+        if (recordingStatus === 'none' || recordingStatus === 'failed') {
+          checkAndStartRecording();
+        } else {
+          clearInterval(checkInterval);
+        }
+      }, 3000);
+      
     } catch (error) {
       console.error('[LiveKit] Connection error:', error);
       
@@ -407,12 +460,17 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
   // End call and save all data to backend
   endCallAndSave: async () => {
     const state = get();
-    const { room, callSessionId, callDuration, transcripts, coachingHistory } = state;
+    const { room, callSessionId, callDuration, transcripts, coachingHistory, recordingStatus } = state;
     
     if (!callSessionId) {
       console.error('[LiveKit] No call session to save');
       get().disconnect();
       return null;
+    }
+    
+    // Stop recording if active
+    if (recordingStatus === 'recording') {
+      await get().stopRecording();
     }
     
     // Disconnect from room first
@@ -549,6 +607,86 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
       coachingData: null,
       coachingHistory: [],
       connectionError: null,
+      recordingStatus: 'none',
+      recordingError: null,
+      operatorTrackId: null,
+      agentTrackId: null,
     });
+  },
+  
+  // Start recording (Track Egress)
+  startRecording: async () => {
+    const { callSessionId, operatorTrackId, agentTrackId } = get();
+    
+    if (!callSessionId || !operatorTrackId || !agentTrackId) {
+      console.log('[LiveKit] Cannot start recording: missing session or track IDs');
+      return;
+    }
+    
+    set({ recordingStatus: 'starting', recordingError: null });
+    
+    try {
+      const token = localStorage.getItem('axtra_token');
+      const response = await fetch(`/api/calls/${callSessionId}/recording`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          operatorTrackId,
+          agentTrackId,
+        }),
+      });
+      
+      if (response.ok) {
+        set({ recordingStatus: 'recording' });
+        console.log('[LiveKit] Recording started successfully');
+      } else if (response.status === 503) {
+        // Recording not configured - silently ignore
+        set({ recordingStatus: 'none' });
+        console.log('[LiveKit] Recording not configured');
+      } else {
+        const error = await response.text();
+        set({ recordingStatus: 'failed', recordingError: error });
+        console.error('[LiveKit] Failed to start recording:', error);
+      }
+    } catch (error) {
+      set({ recordingStatus: 'failed', recordingError: String(error) });
+      console.error('[LiveKit] Failed to start recording:', error);
+    }
+  },
+  
+  // Stop recording
+  stopRecording: async () => {
+    const { callSessionId, recordingStatus } = get();
+    
+    if (!callSessionId || recordingStatus !== 'recording') {
+      return;
+    }
+    
+    set({ recordingStatus: 'stopping' });
+    
+    try {
+      const token = localStorage.getItem('axtra_token');
+      const response = await fetch(`/api/calls/${callSessionId}/recording`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+      
+      if (response.ok) {
+        set({ recordingStatus: 'completed' });
+        console.log('[LiveKit] Recording stopped successfully');
+      } else {
+        const error = await response.text();
+        set({ recordingStatus: 'failed', recordingError: error });
+        console.error('[LiveKit] Failed to stop recording:', error);
+      }
+    } catch (error) {
+      set({ recordingStatus: 'failed', recordingError: String(error) });
+      console.error('[LiveKit] Failed to stop recording:', error);
+    }
   },
 }));

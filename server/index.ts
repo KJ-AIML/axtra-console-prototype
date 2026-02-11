@@ -48,6 +48,10 @@ import {
   getCallDetails,
   getUserCallHistory,
   abandonCallSession,
+  startCallRecording,
+  stopCallRecording,
+  getCallRecordingStatus,
+  isRecordingEnabled,
 } from './call-sessions';
 import {
   getRecordings,
@@ -660,6 +664,117 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     // ============================================
+    // RECORDING ROUTES (LiveKit Egress)
+    // ============================================
+    
+    // Start recording for a call
+    if (method === 'POST' && segments.length === 3 && segments[0] === 'calls' && segments[2] === 'recording' && segments[1] !== 'complete' && segments[1] !== 'history') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const callId = segments[1];
+        const body = await parseBody(req) as {
+          operatorTrackId: string;
+          agentTrackId: string;
+        };
+        
+        if (!body.operatorTrackId || !body.agentTrackId) {
+          sendJson(res, 400, { error: 'operatorTrackId and agentTrackId are required' });
+          return;
+        }
+        
+        // Import dynamically to avoid circular dependencies
+        const { startCallRecording, isRecordingEnabled } = await import('./call-sessions');
+        
+        if (!isRecordingEnabled()) {
+          sendJson(res, 503, { error: 'Recording not configured' });
+          return;
+        }
+        
+        const result = await startCallRecording(callId, body.operatorTrackId, body.agentTrackId);
+        
+        if (result.success) {
+          sendJson(res, 200, { success: true, data: result });
+        } else {
+          sendJson(res, 500, { error: result.error || 'Failed to start recording' });
+        }
+      } catch (error) {
+        console.error('Start recording error:', error);
+        sendJson(res, 500, { error: 'Failed to start recording' });
+      }
+      return;
+    }
+    
+    // Stop recording for a call
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'calls' && segments[2] === 'recording') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const callId = segments[1];
+        const { stopCallRecording } = await import('./call-sessions');
+        
+        const result = await stopCallRecording(callId);
+        
+        if (result.success) {
+          sendJson(res, 200, { success: true, data: result });
+        } else {
+          sendJson(res, 500, { error: result.error || 'Failed to stop recording' });
+        }
+      } catch (error) {
+        console.error('Stop recording error:', error);
+        sendJson(res, 500, { error: 'Failed to stop recording' });
+      }
+      return;
+    }
+    
+    // Get recording status for a call
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'calls' && segments[2] === 'recording') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const callId = segments[1];
+        const { getCallRecordingStatus } = await import('./call-sessions');
+        
+        const status = await getCallRecordingStatus(callId);
+        sendJson(res, 200, { success: true, data: status });
+      } catch (error) {
+        console.error('Get recording status error:', error);
+        sendJson(res, 500, { error: 'Failed to get recording status' });
+      }
+      return;
+    }
+
+    // ============================================
     // RECORDINGS ROUTES
     // ============================================
     
@@ -684,7 +799,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         userId: user.id,
         scenarioId: query.scenario_id as string | undefined,
         difficulty: query.difficulty as string | undefined,
-        status: (query.status as 'completed' | 'abandoned') || 'completed',
+        status: query.status as 'completed' | 'abandoned' | undefined, // Don't filter by default
         dateFrom: query.date_from as string | undefined,
         dateTo: query.date_to as string | undefined,
         minScore: query.min_score ? parseInt(query.min_score as string) : undefined,
@@ -698,8 +813,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const sortOrder = (query.sort_order as 'asc' | 'desc') || 'desc';
       
       try {
+        console.log('[API] Get recordings - filters:', JSON.stringify(filters));
         const result = await getRecordings(filters, page, limit, sortBy, sortOrder);
-        sendJson(res, 200, { success: true, data: result });
+        console.log(`[API] Get recordings - found ${result.total} recordings`);
+        // Return directly in the format frontend expects
+        sendJson(res, 200, { 
+          recordings: result.recordings, 
+          total: result.total 
+        });
       } catch (error) {
         console.error('Get recordings error:', error);
         sendJson(res, 500, { error: 'Failed to get recordings' });
@@ -737,10 +858,94 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           return;
         }
         
-        sendJson(res, 200, { success: true, data: recording });
+        // Return directly in the format frontend expects
+        sendJson(res, 200, { recording });
       } catch (error) {
         console.error('Get recording detail error:', error);
         sendJson(res, 500, { error: 'Failed to get recording' });
+      }
+      return;
+    }
+    
+    // Get recording audio (proxy from storage)
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'recordings' && segments[2] === 'audio') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const recordingId = segments[1];
+      // Parse query string from URL
+      const parsedUrl = parseUrl(req.url || '', true);
+      const channel = (parsedUrl.query.channel as string) || 'operator';
+      
+      try {
+        const recording = await getRecordingDetail(recordingId);
+        
+        if (!recording) {
+          sendJson(res, 404, { error: 'Recording not found' });
+          return;
+        }
+        
+        if (recording.user_id !== user.id) {
+          sendJson(res, 403, { error: 'Access denied' });
+          return;
+        }
+        
+        // Get the appropriate track URL
+        const trackUrl = channel === 'agent' 
+          ? recording.agent_track_url 
+          : recording.operator_track_url;
+        
+        if (!trackUrl) {
+          sendJson(res, 404, { error: 'Audio track not found' });
+          return;
+        }
+        
+        // Stream the file from R2 public URL (includes bucket name)
+        const r2PublicUrl = `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/axtraconsole001/${trackUrl}`;
+        
+        console.log('Fetching audio from R2:', r2PublicUrl);
+        
+        try {
+          const r2Response = await fetch(r2PublicUrl);
+          
+          if (!r2Response.ok) {
+            console.error('R2 fetch failed:', r2Response.status, r2Response.statusText);
+            sendJson(res, 404, { error: 'Audio file not found in storage' });
+            return;
+          }
+          
+          // Get content length if available
+          const contentLength = r2Response.headers.get('content-length');
+          
+          // Set response headers
+          const headers: Record<string, string> = {
+            'Content-Type': 'audio/ogg',
+          };
+          if (contentLength) {
+            headers['Content-Length'] = contentLength;
+          }
+          
+          res.writeHead(200, headers);
+          
+          // Read and send the response
+          const buffer = await r2Response.arrayBuffer();
+          res.end(Buffer.from(buffer));
+        } catch (fetchError) {
+          console.error('Fetch error:', fetchError);
+          sendJson(res, 500, { error: 'Failed to fetch audio from storage' });
+        }
+      } catch (error) {
+        console.error('Get audio error:', error);
+        sendJson(res, 500, { error: 'Failed to get audio' });
       }
       return;
     }

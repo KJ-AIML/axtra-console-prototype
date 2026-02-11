@@ -53,12 +53,18 @@ export interface RecordingListItem {
   started_at: string;
   status: string;
   has_summary: boolean;
+  has_recording?: boolean;
 }
 
 export interface RecordingDetail extends Recording {
   transcripts: TranscriptEntry[];
   coaching: CoachingData[];
   summary: CallSummary | null;
+  has_recording: boolean;
+  recording_status?: 'none' | 'recording' | 'processing' | 'completed' | 'failed';
+  operator_track_url?: string;
+  agent_track_url?: string;
+  stereo_track_url?: string;
 }
 
 export interface RecordingStats {
@@ -163,7 +169,8 @@ export async function getRecordings(
         cs.customer_sentiment,
         cs.started_at,
         cs.status,
-        CASE WHEN sm.id IS NOT NULL THEN 1 ELSE 0 END as has_summary
+        CASE WHEN sm.id IS NOT NULL THEN 1 ELSE 0 END as has_summary,
+        CASE WHEN cs.operator_track_url IS NOT NULL OR cs.agent_track_url IS NOT NULL THEN 1 ELSE 0 END as has_recording
       FROM call_sessions cs
       JOIN scenarios s ON cs.scenario_id = s.id
       LEFT JOIN call_summaries sm ON cs.id = sm.call_id
@@ -186,6 +193,7 @@ export async function getRecordings(
     started_at: row.started_at,
     status: row.status,
     has_summary: Boolean(row.has_summary),
+    has_recording: Boolean(row.has_recording),
   })) as RecordingListItem[];
   
   return { recordings, total };
@@ -279,6 +287,10 @@ export async function getRecordingDetail(recordingId: string): Promise<Recording
     };
   }
   
+  // Check if has recording
+  const hasRecording = !!row.operator_track_url || !!row.stereo_track_url || 
+                       row.recording_status === 'completed' || row.recording_status === 'recording';
+  
   return {
     id: row.id,
     user_id: row.user_id,
@@ -298,6 +310,12 @@ export async function getRecordingDetail(recordingId: string): Promise<Recording
     transcripts,
     coaching,
     summary,
+    // Recording fields
+    has_recording: hasRecording,
+    recording_status: row.recording_status || 'none',
+    operator_track_url: row.operator_track_url,
+    agent_track_url: row.agent_track_url,
+    stereo_track_url: row.stereo_track_url,
   };
 }
 

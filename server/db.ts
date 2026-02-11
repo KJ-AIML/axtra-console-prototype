@@ -171,6 +171,15 @@ export const SCHEMA = {
       total_turns INTEGER DEFAULT 0,
       customer_sentiment TEXT DEFAULT 'neutral' CHECK(customer_sentiment IN ('angry', 'frustrated', 'neutral', 'satisfied', 'happy')),
       final_score INTEGER,
+      -- Recording fields
+      recording_status TEXT DEFAULT 'none' CHECK(recording_status IN ('none', 'recording', 'processing', 'completed', 'failed')),
+      operator_track_url TEXT,
+      agent_track_url TEXT,
+      stereo_track_url TEXT,
+      recording_started_at DATETIME,
+      recording_ended_at DATETIME,
+      operator_egress_id TEXT,
+      agent_egress_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -297,6 +306,53 @@ const INDEXES = [
     name: 'idx_qa_scores_scorer_status',
     sql: `CREATE INDEX IF NOT EXISTS idx_qa_scores_scorer_status ON qa_scores(scorer_id, status)`
   },
+  // Note: This index is created after migrations in initDatabase
+];
+
+// Migration queries for schema updates
+const MIGRATIONS = [
+  // Add recording columns to call_sessions (safe to run even if columns exist)
+  // Note: SQLite ALTER TABLE doesn't support CHECK constraints, so we add without constraints
+  {
+    name: 'add_recording_status',
+    sql: `ALTER TABLE call_sessions ADD COLUMN recording_status TEXT DEFAULT 'none';`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_operator_track_url',
+    sql: `ALTER TABLE call_sessions ADD COLUMN operator_track_url TEXT;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_agent_track_url',
+    sql: `ALTER TABLE call_sessions ADD COLUMN agent_track_url TEXT;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_stereo_track_url',
+    sql: `ALTER TABLE call_sessions ADD COLUMN stereo_track_url TEXT;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_recording_started_at',
+    sql: `ALTER TABLE call_sessions ADD COLUMN recording_started_at DATETIME;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_recording_ended_at',
+    sql: `ALTER TABLE call_sessions ADD COLUMN recording_ended_at DATETIME;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_operator_egress_id',
+    sql: `ALTER TABLE call_sessions ADD COLUMN operator_egress_id TEXT;`,
+    fallback: 'Column may already exist'
+  },
+  {
+    name: 'add_agent_egress_id',
+    sql: `ALTER TABLE call_sessions ADD COLUMN agent_egress_id TEXT;`,
+    fallback: 'Column may already exist'
+  },
 ];
 
 /**
@@ -317,6 +373,33 @@ export async function initDatabase(): Promise<void> {
     for (const index of INDEXES) {
       await db.execute(index.sql);
       console.log(`    ✓ Index '${index.name}' ready`);
+    }
+    
+    // Run migrations (safe to fail if columns already exist)
+    console.log('  Running migrations...');
+    for (const migration of MIGRATIONS) {
+      try {
+        await db.execute(migration.sql);
+        console.log(`    ✓ Migration '${migration.name}' applied`);
+      } catch (err: any) {
+        // Check if it's a "duplicate column" error
+        const errorMessage = err?.message || String(err);
+        if (errorMessage.includes('duplicate column') || 
+            errorMessage.includes('already exists') ||
+            errorMessage.includes('no such column')) {
+          console.log(`    ⏭️  Migration '${migration.name}' skipped (column already exists)`);
+        } else {
+          console.log(`    ⚠️  Migration '${migration.name}' warning: ${errorMessage.substring(0, 100)}`);
+        }
+      }
+    }
+    
+    // Create recording_status index after migrations (may fail if column doesn't exist yet)
+    try {
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_call_sessions_recording_status ON call_sessions(recording_status)`);
+      console.log(`    ✓ Index 'idx_call_sessions_recording_status' ready`);
+    } catch (err) {
+      console.log(`    ⏭️  Index 'idx_call_sessions_recording_status' skipped (column may not exist)`);
     }
     
     console.log('✅ Database initialized successfully');

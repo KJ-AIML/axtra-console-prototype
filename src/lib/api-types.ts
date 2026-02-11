@@ -138,6 +138,13 @@ export interface RecordingDetail extends RecordingListItem {
   transcripts: TranscriptEntry[];
   coaching: CoachingData[];
   summary: CallSummary | null;
+  // Recording fields
+  has_recording: boolean;
+  recording_status?: 'none' | 'recording' | 'processing' | 'completed' | 'failed';
+  operator_track_url?: string;
+  agent_track_url?: string;
+  stereo_track_url?: string;
+  audio_url?: string; // Fallback single audio URL
 }
 
 export interface RecordingFilters {

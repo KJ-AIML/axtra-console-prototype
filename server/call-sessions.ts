@@ -6,6 +6,7 @@
 import { db } from './db';
 import { v4 as uuidv4 } from 'uuid';
 import { generateCallSummaryWithFallback } from './services/ai-agent-client';
+import * as egressService from './egress-service';
 
 // ============================================
 // Types
@@ -29,6 +30,15 @@ export interface CallSession {
   total_turns: number;
   customer_sentiment: string;
   final_score?: number;
+  // Recording fields
+  recording_status?: 'none' | 'recording' | 'processing' | 'completed' | 'failed';
+  operator_track_url?: string;
+  agent_track_url?: string;
+  stereo_track_url?: string;
+  recording_started_at?: string;
+  recording_ended_at?: string;
+  operator_egress_id?: string;
+  agent_egress_id?: string;
 }
 
 export interface TranscriptEntry {
@@ -69,6 +79,9 @@ export interface CompleteCallRequest {
   transcripts: TranscriptEntry[];
   coaching_history: CoachingData[];
   final_score?: number;
+  // Track IDs for recording
+  operator_track_id?: string;
+  agent_track_id?: string;
 }
 
 // ============================================
@@ -250,6 +263,9 @@ export async function completeCallSession(
   const session = await getCallSession(data.call_id);
   if (!session) throw new Error('Call session not found');
   
+  // Stop recording if active
+  await stopCallRecording(data.call_id);
+  
   // Generate AI summary with fallback to mock
   const { summary, source } = await generateCallSummaryWithFallback(
     {
@@ -343,38 +359,55 @@ export async function completeCallSession(
     // Don't fail the whole operation if this fails
   }
   
-  // Save transcripts
-  for (let i = 0; i < data.transcripts.length; i++) {
-    const transcript = data.transcripts[i];
-    await db.execute({
-      sql: `
-        INSERT INTO call_transcripts (
-          id, call_id, speaker, text, timestamp, sequence_order
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        uuidv4(),
-        data.call_id,
-        transcript.speaker,
-        transcript.text,
-        transcript.timestamp,
-        i,
-      ],
-    });
+  // Check if transcripts already exist for this call
+  const existingTranscripts = await db.execute({
+    sql: 'SELECT COUNT(*) as count FROM call_transcripts WHERE call_id = ?',
+    args: [data.call_id],
+  });
+  
+  if (Number(existingTranscripts.rows[0]?.count || 0) === 0) {
+    // Save transcripts only if none exist
+    for (let i = 0; i < data.transcripts.length; i++) {
+      const transcript = data.transcripts[i];
+      await db.execute({
+        sql: `
+          INSERT INTO call_transcripts (
+            id, call_id, speaker, text, timestamp, sequence_order
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          uuidv4(),
+          data.call_id,
+          transcript.speaker,
+          transcript.text,
+          transcript.timestamp,
+          i,
+        ],
+      });
+    }
+  } else {
+    console.log(`[CallSession] Transcripts already exist for call ${data.call_id}, skipping insert`);
   }
   
-  // Save coaching history
-  for (const coaching of data.coaching_history) {
-    await db.execute({
-      sql: `
-        INSERT INTO call_coaching (
-          id, call_id, analysis_id,
-          card_1_title, card_1_detail, card_1_action, card_1_status,
-          card_2_title, card_2_detail, card_2_action, card_2_status,
-          card_3_title, card_3_detail, card_3_action, card_3_status,
-          script_summary, script_suggestion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
+  // Check if coaching history already exists
+  const existingCoaching = await db.execute({
+    sql: 'SELECT COUNT(*) as count FROM call_coaching WHERE call_id = ?',
+    args: [data.call_id],
+  });
+  
+  if (Number(existingCoaching.rows[0]?.count || 0) === 0) {
+    // Save coaching history only if none exist
+    for (const coaching of data.coaching_history) {
+      await db.execute({
+        sql: `
+          INSERT INTO call_coaching (
+            id, call_id, analysis_id,
+            card_1_title, card_1_detail, card_1_action, card_1_status,
+            card_2_title, card_2_detail, card_2_action, card_2_status,
+            card_3_title, card_3_detail, card_3_action, card_3_status,
+            script_summary, script_suggestion
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
       args: [
         uuidv4(),
         data.call_id,
@@ -395,29 +428,42 @@ export async function completeCallSession(
         coaching.script?.suggestion || '',
       ],
     });
+    }
+  } else {
+    console.log(`[CallSession] Coaching history already exists for call ${data.call_id}, skipping insert`);
   }
   
-  // Save summary
-  await db.execute({
-    sql: `
-      INSERT INTO call_summaries (
-        id, call_id, summary, key_points, strengths, improvements,
-        customer_satisfaction, resolution_status, coaching_effectiveness, generated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    args: [
-      uuidv4(),
-      data.call_id,
-      summary.summary,
-      JSON.stringify(summary.key_points),
-      JSON.stringify(summary.strengths),
-      JSON.stringify(summary.improvements),
-      summary.customer_satisfaction,
-      summary.resolution_status,
-      summary.coaching_effectiveness,
-      source, // 'ai' or 'mock'
-    ],
+  // Save summary (check if already exists first)
+  const existingSummary = await db.execute({
+    sql: 'SELECT id FROM call_summaries WHERE call_id = ?',
+    args: [data.call_id],
   });
+  
+  if (existingSummary.rows.length === 0) {
+    // Only insert if no summary exists
+    await db.execute({
+      sql: `
+        INSERT INTO call_summaries (
+          id, call_id, summary, key_points, strengths, improvements,
+          customer_satisfaction, resolution_status, coaching_effectiveness, generated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        uuidv4(),
+        data.call_id,
+        summary.summary,
+        JSON.stringify(summary.key_points),
+        JSON.stringify(summary.strengths),
+        JSON.stringify(summary.improvements),
+        summary.customer_satisfaction,
+        summary.resolution_status,
+        summary.coaching_effectiveness,
+        source, // 'ai' or 'mock'
+      ],
+    });
+  } else {
+    console.log(`[CallSession] Summary already exists for call ${data.call_id}, skipping insert`);
+  }
   
   // Get updated session data
   const updatedSession = await getCallSession(data.call_id);
@@ -536,6 +582,9 @@ export async function getCallDetails(callId: string): Promise<{
  * Abandon a call (user left without ending properly)
  */
 export async function abandonCallSession(callId: string): Promise<void> {
+  // Stop recording if active
+  await egressService.stopCallRecording(callId);
+  
   await db.execute({
     sql: `
       UPDATE call_sessions SET
@@ -546,4 +595,57 @@ export async function abandonCallSession(callId: string): Promise<void> {
     `,
     args: [callId],
   });
+}
+
+// ============================================
+// Recording Functions
+// ============================================
+
+/**
+ * Start recording for a call session
+ * Call this when the operator and agent tracks are published
+ */
+export async function startCallRecording(
+  callId: string,
+  operatorTrackId: string,
+  agentTrackId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getCallSession(callId);
+  if (!session) {
+    return { success: false, error: 'Call session not found' };
+  }
+  
+  if (!egressService.isEgressConfigured()) {
+    console.log('[CallSession] Egress not configured, skipping recording');
+    return { success: false, error: 'Egress not configured' };
+  }
+  
+  return egressService.startCallRecording(callId, session.room_name, operatorTrackId, agentTrackId);
+}
+
+/**
+ * Stop recording for a call session
+ */
+export async function stopCallRecording(callId: string): Promise<{ success: boolean; error?: string }> {
+  return egressService.stopCallRecording(callId);
+}
+
+/**
+ * Get recording status and URLs for a call
+ */
+export async function getCallRecordingStatus(callId: string): Promise<{
+  status: 'none' | 'recording' | 'processing' | 'completed' | 'failed';
+  operatorUrl?: string;
+  agentUrl?: string;
+  stereoUrl?: string;
+  duration?: number;
+}> {
+  return egressService.getRecordingStatus(callId);
+}
+
+/**
+ * Check if recording is enabled/configured
+ */
+export function isRecordingEnabled(): boolean {
+  return egressService.isEgressConfigured();
 }
