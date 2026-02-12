@@ -26,3 +26,13 @@ export type {
   Scenario as SimulationScenario,
   SimulationStats,
 } from './useSimulationStore';
+export { useQAStore } from './useQAStore';
+export type {
+  QACriteria,
+  AIQAResult,
+  AIQACriteriaScore,
+  QAReviewQueueItem,
+  CompleteQAData,
+  ScoringType,
+  ReviewedCall,
+} from './useQAStore';

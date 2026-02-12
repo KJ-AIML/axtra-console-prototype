@@ -69,6 +69,16 @@ import {
   deleteQAScore,
   QA_RUBRIC,
 } from './qa-scoring';
+import {
+  runAIQAAnalysis,
+  getAIQAResult,
+  getQACriteria,
+  saveHumanQAReview,
+  getHumanQAReviewForCall,
+  getQAReviewQueue,
+  getCompleteQAData,
+  getReviewedCalls,
+} from './qa-review';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -889,20 +899,39 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       try {
         const recording = await getRecordingDetail(recordingId);
         
+        console.log('[Audio] Fetching audio for recording:', recordingId, 'channel:', channel);
+        console.log('[Audio] Recording found:', !!recording);
+        
         if (!recording) {
           sendJson(res, 404, { error: 'Recording not found' });
           return;
         }
         
+        console.log('[Audio] User check:', recording.user_id, '===', user.id);
         if (recording.user_id !== user.id) {
           sendJson(res, 403, { error: 'Access denied' });
           return;
         }
         
         // Get the appropriate track URL
-        const trackUrl = channel === 'agent' 
+        let trackUrl = channel === 'agent' 
           ? recording.agent_track_url 
           : recording.operator_track_url;
+        
+        // Fallback to other channel if requested channel is not available
+        if (!trackUrl) {
+          const fallbackUrl = channel === 'agent'
+            ? recording.operator_track_url
+            : recording.agent_track_url;
+          if (fallbackUrl) {
+            console.log(`[Audio] ${channel} track not found, falling back to ${channel === 'agent' ? 'operator' : 'agent'}`);
+            trackUrl = fallbackUrl;
+          }
+        }
+        
+        console.log('[Audio] Track URL:', trackUrl);
+        console.log('[Audio] operator_track_url:', recording.operator_track_url);
+        console.log('[Audio] agent_track_url:', recording.agent_track_url);
         
         if (!trackUrl) {
           sendJson(res, 404, { error: 'Audio track not found' });
@@ -910,39 +939,50 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         }
         
         // Stream the file from R2 public URL
-        const r2PublicUrl = `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${trackUrl}`;
+        // Try multiple URL variations to handle different filename formats
+        const urlVariations = [
+          `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${trackUrl}`,
+          // Try with .ogg extension if not present
+          !trackUrl.endsWith('.ogg') ? `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${trackUrl}.ogg` : null,
+          // Try without .ogg extension if present
+          trackUrl.endsWith('.ogg') ? `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${trackUrl.slice(0, -4)}` : null,
+        ].filter(Boolean) as string[];
         
-        console.log('Fetching audio from R2:', r2PublicUrl);
+        let r2Response: Response | null = null;
+        let usedUrl = '';
         
-        try {
-          const r2Response = await fetch(r2PublicUrl);
-          
-          if (!r2Response.ok) {
-            console.error('R2 fetch failed:', r2Response.status, r2Response.statusText);
-            sendJson(res, 404, { error: 'Audio file not found in storage' });
-            return;
+        for (const url of urlVariations) {
+          console.log('[Audio] Trying URL:', url);
+          usedUrl = url;
+          r2Response = await fetch(url);
+          if (r2Response.ok) {
+            console.log('[Audio] Successfully found audio at:', url);
+            break;
           }
-          
-          // Get content length if available
-          const contentLength = r2Response.headers.get('content-length');
-          
-          // Set response headers
-          const headers: Record<string, string> = {
-            'Content-Type': 'audio/ogg',
-          };
-          if (contentLength) {
-            headers['Content-Length'] = contentLength;
-          }
-          
-          res.writeHead(200, headers);
-          
-          // Read and send the response
-          const buffer = await r2Response.arrayBuffer();
-          res.end(Buffer.from(buffer));
-        } catch (fetchError) {
-          console.error('Fetch error:', fetchError);
-          sendJson(res, 500, { error: 'Failed to fetch audio from storage' });
         }
+        
+        if (!r2Response || !r2Response.ok) {
+          console.error('[Audio] All R2 URLs failed. Last attempt:', usedUrl, 'Status:', r2Response?.status);
+          sendJson(res, 404, { error: 'Audio file not found in storage' });
+          return;
+        }
+        
+        // Get content length if available
+        const contentLength = r2Response.headers.get('content-length');
+        
+        // Set response headers
+        const headers: Record<string, string> = {
+          'Content-Type': 'audio/ogg',
+        };
+        if (contentLength) {
+          headers['Content-Length'] = contentLength;
+        }
+        
+        res.writeHead(200, headers);
+        
+        // Read and send the response
+        const buffer = await r2Response.arrayBuffer();
+        res.end(Buffer.from(buffer));
       } catch (error) {
         console.error('Get audio error:', error);
         sendJson(res, 500, { error: 'Failed to get audio' });
@@ -1002,6 +1042,242 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('Get recording stats error:', error);
         sendJson(res, 500, { error: 'Failed to get stats' });
+      }
+      return;
+    }
+
+    // ============================================
+    // QA REVIEW ROUTES
+    // ============================================
+    
+    // Get QA review queue (calls pending human review)
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'queue') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const query = parseUrl(req.url || '', true).query;
+      const limit = query.limit ? parseInt(query.limit as string) : 20;
+      const offset = query.offset ? parseInt(query.offset as string) : 0;
+      
+      try {
+        const queue = await getQAReviewQueue(limit, offset);
+        sendJson(res, 200, { success: true, data: queue });
+      } catch (error) {
+        console.error('Get QA queue error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA queue' });
+      }
+      return;
+    }
+    
+    // Get reviewed calls (calls with human QA reviews)
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'reviewed') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const query = parseUrl(req.url || '', true).query;
+      const limit = query.limit ? parseInt(query.limit as string) : 20;
+      const offset = query.offset ? parseInt(query.offset as string) : 0;
+      const myReviewsOnly = query.my === 'true';
+      
+      try {
+        const reviewed = await getReviewedCalls(
+          myReviewsOnly ? user.id : undefined,
+          limit,
+          offset
+        );
+        sendJson(res, 200, { success: true, data: reviewed });
+      } catch (error) {
+        console.error('Get reviewed calls error:', error);
+        sendJson(res, 500, { error: 'Failed to get reviewed calls' });
+      }
+      return;
+    }
+    
+    // Get AI QA result for a call
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'ai' && segments[2]) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const callId = segments[2];
+      
+      try {
+        const aiResult = await getAIQAResult(callId);
+        
+        if (!aiResult) {
+          sendJson(res, 404, { error: 'AI QA result not found' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, data: aiResult });
+      } catch (error) {
+        console.error('Get AI QA error:', error);
+        sendJson(res, 500, { error: 'Failed to get AI QA result' });
+      }
+      return;
+    }
+    
+    // Get complete QA data (AI + Human) for a call
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1]) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const callId = segments[1];
+      
+      try {
+        const qaData = await getCompleteQAData(callId, user.id);
+        sendJson(res, 200, { success: true, data: qaData });
+      } catch (error) {
+        console.error('Get QA data error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA data' });
+      }
+      return;
+    }
+    
+    // Get QA criteria
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'criteria') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const criteria = await getQACriteria();
+        sendJson(res, 200, { success: true, data: criteria });
+      } catch (error) {
+        console.error('Get QA criteria error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA criteria' });
+      }
+      return;
+    }
+    
+    // Save/update QA criteria (admin/config endpoint)
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'criteria') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      
+      try {
+        const { saveQACriteria } = await import('./qa-review');
+        await saveQACriteria(body);
+        sendJson(res, 200, { success: true, message: 'Criteria saved' });
+      } catch (error: any) {
+        console.error('Save QA criteria error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to save criteria' });
+      }
+      return;
+    }
+    
+    // Delete QA criteria
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'criteria' && segments[2]) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const criteriaId = segments[2];
+      
+      try {
+        const { deleteQACriteria } = await import('./qa-review');
+        await deleteQACriteria(criteriaId);
+        sendJson(res, 200, { success: true, message: 'Criteria deleted' });
+      } catch (error: any) {
+        console.error('Delete QA criteria error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to delete criteria' });
+      }
+      return;
+    }
+    
+    // Save human QA review
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'reviews') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      
+      try {
+        const review = await saveHumanQAReview({
+          call_id: body.call_id,
+          reviewer_id: user.id,
+          overall_score: body.overall_score,
+          general_feedback: body.general_feedback,
+          status: body.status,
+          criteria_scores: body.criteria_scores,
+          comments: body.comments,
+        });
+        
+        sendJson(res, 200, { success: true, data: review });
+      } catch (error) {
+        console.error('Save QA review error:', error);
+        sendJson(res, 500, { error: 'Failed to save QA review' });
       }
       return;
     }

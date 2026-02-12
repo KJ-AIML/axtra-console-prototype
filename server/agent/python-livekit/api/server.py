@@ -5,24 +5,31 @@ HTTP endpoint for Node.js backend to request AI-powered call summaries
 
 import os
 import time
-import uvicorn
+from contextlib import asynccontextmanager
 from typing import Optional
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from contextlib import asynccontextmanager
 
+from agents.prompts.qa_analysis_prompts import DEFAULT_CRITERIA
 from agents.schemas.call_summary_types import (
     CallSummaryInput,
     CallSummaryResponse,
     CallSummaryState,
 )
-from agents.workflow.summary_build import get_call_summary_workflow
+from agents.schemas.qa_types import (
+    QAAnalysisInput,
+    QAAnalysisResponse,
+    QAnalysisState,
+)
 from agents.services.hierarchical_summary import (
     HierarchicalSummarizer,
     get_hierarchical_summarizer,
 )
-
+from agents.workflow.qa_analysis_build import get_qa_analysis_workflow
+from agents.workflow.summary_build import get_call_summary_workflow
 
 # ============== Pydantic Models for API ==============
 
@@ -272,6 +279,112 @@ async def generate_summary_sync(request: SummaryRequest):
         )
 
 
+# ============== QA Analysis Endpoints ==============
+
+class QAAnalysisRequest(BaseModel):
+    """Request for QA analysis"""
+    call_id: str
+    transcripts: list
+    coaching_history: list = []
+    duration_seconds: int
+    total_turns: int
+    scenario_type: str = "customer_service"
+    criteria: list = []  # List of criteria to evaluate
+
+
+class QAAnalysisResponse(BaseModel):
+    """Response from QA analysis"""
+    success: bool
+    data: dict
+    processing_time_ms: int
+    error: Optional[str] = None
+
+
+@app.post("/api/qa/analyze", response_model=QAAnalysisResponse)
+async def analyze_qa(request: QAAnalysisRequest):
+    """
+    Analyze call quality using LangGraph QA workflow
+    
+    This endpoint evaluates a call against configurable QA criteria
+    and returns detailed scoring with evidence.
+    
+    Workflow:
+    1. Evaluate each criteria sequentially (with structured LLM output)
+    2. Aggregate all criteria results into final QA report
+    """
+    start_time = time.time()
+    
+    print(f"\n{'='*70}")
+    print(f"[API] QA Analysis Request: {request.call_id}")
+    print(f"{'='*70}")
+    print(f"Duration: {request.duration_seconds}s")
+    print(f"Turns: {request.total_turns}")
+    print(f"Criteria: {len(request.criteria) if request.criteria else 5} items")
+    
+    try:
+        # Get or create workflow
+        workflow = get_qa_analysis_workflow()
+        
+        # Use default criteria if none provided
+        criteria = request.criteria if request.criteria else DEFAULT_CRITERIA
+        
+        # Prepare initial state
+        initial_state: QAnalysisState = {
+            "call_metadata": {
+                "call_id": request.call_id,
+                "duration_seconds": request.duration_seconds,
+                "total_turns": request.total_turns,
+                "scenario_type": request.scenario_type,
+            },
+            "transcripts": request.transcripts,
+            "coaching_history": request.coaching_history,
+            "criteria": criteria,
+            "criteria_results": {},
+            "qa_report": {},
+        }
+        
+        print("[API] Invoking QA analysis workflow...")
+        
+        # Run workflow
+        final_state = workflow.invoke(initial_state)
+        
+        # Extract result
+        qa_report = final_state.get("qa_report", {})
+        
+        processing_time = int((time.time() - start_time) * 1000)
+        
+        print(f"[API] QA workflow completed in {processing_time}ms")
+        print(f"[API] Overall Score: {qa_report.get('overall_score')}/100")
+        print(f"[API] Criteria evaluated: {len(qa_report.get('criteria_scores', []))}")
+        print(f"{'='*70}\n")
+        
+        return QAAnalysisResponse(
+            success=True,
+            data=qa_report,
+            processing_time_ms=processing_time,
+        )
+        
+    except Exception as e:
+        processing_time = int((time.time() - start_time) * 1000)
+        print(f"[API] QA Analysis Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return fallback
+        return QAAnalysisResponse(
+            success=False,
+            data={
+                "overall_score": 60,
+                "summary_feedback": "QA analysis encountered an error. Please review manually.",
+                "key_strengths": ["Unable to analyze"],
+                "key_improvements": ["Please review manually"],
+                "criteria_scores": []
+            },
+            processing_time_ms=processing_time,
+            error=str(e),
+        )
+
+
 # ============== Main Entry Point ==============
 
 def main():
@@ -282,6 +395,7 @@ def main():
     print(f"\nStarting Call Summary API Server on {host}:{port}")
     print(f"Health check: http://{host}:{port}/health")
     print(f"Summary endpoint: http://{host}:{port}/api/summary/generate")
+    print(f"QA Analysis endpoint: http://{host}:{port}/api/qa/analyze")
     
     uvicorn.run(
         "api.server:app",

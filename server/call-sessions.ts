@@ -465,6 +465,30 @@ export async function completeCallSession(
     console.log(`[CallSession] Summary already exists for call ${data.call_id}, skipping insert`);
   }
   
+  // Trigger AI QA Analysis (async - don't wait for it)
+  // This runs in the background after call is completed
+  try {
+    // Dynamically import to avoid circular dependency
+    const { runAIQAAnalysis } = await import('./qa-review');
+    
+    // Run without awaiting - let it complete in background
+    runAIQAAnalysis(
+      data.call_id,
+      data.transcripts,
+      data.coaching_history,
+      data.duration_seconds,
+      data.total_turns,
+      'customer_service'
+    ).then(() => {
+      console.log(`[CallSession] AI QA analysis completed for call ${data.call_id}`);
+    }).catch((error) => {
+      console.error(`[CallSession] AI QA analysis failed for call ${data.call_id}:`, error);
+    });
+  } catch (e) {
+    console.error('[CallSession] Failed to start AI QA analysis:', e);
+    // Don't fail the call completion if QA fails
+  }
+  
   // Get updated session data
   const updatedSession = await getCallSession(data.call_id);
   if (!updatedSession) throw new Error('Call session not found after update');

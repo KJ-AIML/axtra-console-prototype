@@ -53,10 +53,12 @@ function getEgressClient(): EgressClient {
 
 /**
  * Generate file path (without creating output object)
+ * Note: LiveKit Egress will append its own timestamp before the extension
  */
 function getFilePath(filepath: string): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return `${filepath}-${timestamp}.ogg`;
+  // Return path with .ogg extension - LiveKit will insert timestamp before .ogg
+  // e.g., recordings/{callId}/operator.ogg becomes recordings/{callId}/operator-{timestamp}.ogg
+  return `${filepath}.ogg`;
 }
 
 /**
@@ -427,6 +429,33 @@ export async function getSignedRecordingUrl(
  */
 export function getActiveRecordings(): TrackRecordingInfo[] {
   return Array.from(activeRecordings.values());
+}
+
+/**
+ * Resolve actual file URL from R2 using the base path
+ * LiveKit adds timestamps to filenames, so we need to find the actual file
+ */
+export async function resolveRecordingUrl(
+  basePath: string
+): Promise<string | null> {
+  // For R2 with public access, construct the public URL directly
+  // The basePath should be like: recordings/{callId}/operator
+  // LiveKit creates: recordings/{callId}/operator-{timestamp}.ogg
+  
+  // Since we can't easily list R2 files without S3 SDK, 
+  // we'll try common timestamp patterns or use a placeholder approach
+  // For now, return the R2 public base URL and let the caller try to find it
+  
+  if (!basePath) return null;
+  
+  // If the stored path already has a full filename with timestamp, use it
+  if (basePath.endsWith('.ogg')) {
+    return `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${basePath}`;
+  }
+  
+  // Otherwise, we need to figure out the actual filename
+  // This is a workaround - ideally we'd list R2 objects
+  return null;
 }
 
 /**

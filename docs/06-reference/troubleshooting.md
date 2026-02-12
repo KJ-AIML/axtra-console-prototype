@@ -6,14 +6,24 @@ Common issues and solutions for Axtra Console development.
 
 ## 🚀 Server Issues
 
-### "Route not found"
+### "Route not found" or API 404 Errors
 
-**Cause:** Path segment mismatch in server handler
+**Cause:** Backend server not running or wrong port
 
 **Solution:**
-- Check URL matches exactly
-- Verify `pathSegments` in server/index.ts
-- Use console.log to debug route matching
+```bash
+# Check if backend is running
+curl http://localhost:3001/api/health
+
+# Should return: {"status":"ok","database":"connected"}
+```
+
+**Note:** During development with `npm run dev`, the Node.js backend (port 3001) is **automatically started** by Vite's `apiPlugin()`. You don't need to run it separately!
+
+If the backend isn't starting:
+- Check `.env.local` has correct `API_PORT=3001`
+- Check for database connection errors in terminal
+- Look for port conflicts (another process using port 3001)
 
 ### "Database error"
 

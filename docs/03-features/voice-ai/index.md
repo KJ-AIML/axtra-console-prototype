@@ -1,6 +1,6 @@
 # Voice AI
 
-LiveKit voice integration and AXTRA Copilot system.
+LiveKit voice integration, AI coaching, and call analysis systems.
 
 ---
 
@@ -9,23 +9,51 @@ LiveKit voice integration and AXTRA Copilot system.
 | Document | Description |
 |----------|-------------|
 | [AXTRA Copilot](./axtra-copilot.md) | Real-time 3-card coaching |
+| [AI Call Summary](./ai-call-summary.md) | AI-powered post-call summary |
+| [Call Recording](./call-recording.md) | Dual-track audio recording |
 | [LiveKit Integration](./livekit-integration.md) | Voice call setup |
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture Overview
 
 ```
-┌─────────────┐      WebRTC + Data      ┌─────────────────┐
-│   Client    │◄──────────────────────►│  LiveKit Cloud  │
-│  (Browser)  │                         │   (SFU/Media)   │
-└──────┬──────┘                         └────────┬────────┘
-       │                                          │
-       │  1. Get token                            │  3. Agent joins
-       │  2. Connect room                         │  4. Voice conversation
-       │  3. Enable mic                           │  5. Coaching data
-       │  4. Subscribe audio                      │
-       └──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Voice AI System                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────────────┐                                                       │
+│  │   Browser    │                                                       │
+│  │   (React)    │                                                       │
+│  └──────┬───────┘                                                       │
+│         │ WebRTC                                                        │
+│         ▼                                                               │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                      LiveKit Cloud                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │   │
+│  │  │   Room      │  │   Egress    │  │      Data Channel       │  │   │
+│  │  │  (Media)    │  │ (Recording) │  │  (Coaching → Frontend)  │  │   │
+│  │  └──────┬──────┘  └──────┬──────┘  └─────────────────────────┘  │   │
+│  └─────────┼────────────────┼──────────────────────────────────────┘   │
+│            │                │                                           │
+│            │                │ WebSocket                                 │
+│            │                ▼                                           │
+│            │         ┌─────────────┐                                    │
+│            │         │     R2      │                                    │
+│            │         │  (Storage)  │                                    │
+│            │         └─────────────┘                                    │
+│            │                                                            │
+│            ▼                                                            │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                   Python AI Agent (Port 8000)                    │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │   │
+│  │  │   Voice     │  │ Supervisor  │  │  Call Summary API       │  │   │
+│  │  │   Agent     │  │  (3-Card)   │  │  (Port 8001)            │  │   │
+│  │  │  (Gemini)   │  │ (LangGraph) │  │  - Hierarchical Summary │  │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -33,20 +61,37 @@ LiveKit voice integration and AXTRA Copilot system.
 ## 🚀 Quick Start
 
 ```bash
-# 1. Start Python Agent
+# 1. Start Python Voice Agent + Copilot
 cd server/agent/python-livekit
 uv run python livekit_agent_langchain.py dev
 
-# 2. Start Axtra Console
+# 2. Start AI Call Summary API (separate terminal)
+cd server/agent/python-livekit
+uv run python api/server.py
+
+# 3. Start Axtra Console
 npm run dev
 
-# 3. Open http://localhost:3000
-# 4. Start a voice call
+# 4. Open http://localhost:3000
+# 5. Start a voice call
 ```
+
+---
+
+## 📊 Feature Comparison
+
+| Feature | Real-Time | Post-Call | AI-Powered |
+|---------|-----------|-----------|------------|
+| **AXTRA Copilot** | ✅ | ❌ | ✅ |
+| **Call Recording** | ✅ | ✅ | ❌ |
+| **AI Summary** | ❌ | ✅ | ✅ |
+| **QA Scoring** | ❌ | ✅ | ❌ |
 
 ---
 
 ## 📚 Next Steps
 
-- [AXTRA Copilot](./axtra-copilot.md) - Learn about coaching
+- [AXTRA Copilot](./axtra-copilot.md) - Learn about real-time coaching
+- [AI Call Summary](./ai-call-summary.md) - Configure AI summary API
+- [Call Recording](./call-recording.md) - Set up R2 storage
 - [Troubleshooting](../../06-reference/troubleshooting.md) - Fix voice issues

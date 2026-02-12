@@ -243,27 +243,99 @@ export const SCHEMA = {
       FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
     )
   `,
-  qa_scores: `
-    CREATE TABLE IF NOT EXISTS qa_scores (
+  // QA Configuration (configurable criteria)
+  qa_config: `
+    CREATE TABLE IF NOT EXISTS qa_config (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      name TEXT DEFAULT 'Customer Service QA',
+      description TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+  
+  // QA Criteria (questions/prompts for AI evaluation)
+  qa_criteria: `
+    CREATE TABLE IF NOT EXISTS qa_criteria (
+      id TEXT PRIMARY KEY,
+      config_id TEXT DEFAULT 'default',
+      sort_order INTEGER,
+      name TEXT NOT NULL,
+      description TEXT,
+      ai_prompt TEXT NOT NULL,
+      scoring_type TEXT DEFAULT 'scale' CHECK(scoring_type IN ('scale', 'binary')),
+      max_score INTEGER DEFAULT 5,
+      weight INTEGER DEFAULT 0,
+      is_required BOOLEAN DEFAULT 0,
+      FOREIGN KEY (config_id) REFERENCES qa_config(id)
+    )
+  `,
+  
+  // AI QA Results (auto-generated after call)
+  ai_qa_results: `
+    CREATE TABLE IF NOT EXISTS ai_qa_results (
+      id TEXT PRIMARY KEY,
+      call_id TEXT NOT NULL UNIQUE,
+      overall_score INTEGER CHECK(overall_score BETWEEN 0 AND 100),
+      summary_feedback TEXT,
+      status TEXT CHECK(status IN ('pending_review', 'reviewed')) DEFAULT 'pending_review',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE
+    )
+  `,
+  
+  // AI QA Criteria Scores (detailed breakdown)
+  ai_qa_criteria_scores: `
+    CREATE TABLE IF NOT EXISTS ai_qa_criteria_scores (
+      id TEXT PRIMARY KEY,
+      ai_qa_result_id TEXT NOT NULL,
+      criteria_id TEXT NOT NULL,
+      score INTEGER CHECK(score BETWEEN 1 AND 5),
+      reasoning TEXT,
+      evidence_quote TEXT,
+      evidence_timestamp INTEGER,
+      FOREIGN KEY (ai_qa_result_id) REFERENCES ai_qa_results(id) ON DELETE CASCADE,
+      FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id)
+    )
+  `,
+  
+  // Human QA Reviews (manual review by QA staff)
+  human_qa_reviews: `
+    CREATE TABLE IF NOT EXISTS human_qa_reviews (
       id TEXT PRIMARY KEY,
       call_id TEXT NOT NULL,
-      scorer_id TEXT NOT NULL,
-      scored_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      professionalism INTEGER CHECK(professionalism BETWEEN 1 AND 5),
-      empathy INTEGER CHECK(empathy BETWEEN 1 AND 5),
-      problem_solving INTEGER CHECK(problem_solving BETWEEN 1 AND 5),
-      script_adherence INTEGER CHECK(script_adherence BETWEEN 1 AND 5),
-      tone_manner INTEGER CHECK(tone_manner BETWEEN 1 AND 5),
+      reviewer_id TEXT NOT NULL,
       overall_score INTEGER CHECK(overall_score BETWEEN 0 AND 100),
-      strengths TEXT, -- Free text strengths
-      improvements TEXT, -- Free text improvements
-      general_notes TEXT, -- General comments
-      status TEXT CHECK(status IN ('draft', 'submitted', 'approved')) DEFAULT 'draft',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      general_feedback TEXT,
+      status TEXT CHECK(status IN ('draft', 'submitted')) DEFAULT 'draft',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE,
-      FOREIGN KEY (scorer_id) REFERENCES users(id) ON DELETE CASCADE,
-      UNIQUE(call_id, scorer_id) -- One score per scorer per call
+      FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(call_id, reviewer_id)
+    )
+  `,
+  
+  // Human QA Criteria Scores (detailed breakdown)
+  human_qa_criteria_scores: `
+    CREATE TABLE IF NOT EXISTS human_qa_criteria_scores (
+      id TEXT PRIMARY KEY,
+      human_qa_review_id TEXT NOT NULL,
+      criteria_id TEXT NOT NULL,
+      score INTEGER CHECK(score BETWEEN 1 AND 5),
+      comment TEXT,
+      FOREIGN KEY (human_qa_review_id) REFERENCES human_qa_reviews(id) ON DELETE CASCADE,
+      FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id)
+    )
+  `,
+  
+  // Human QA Comments (timestamped during audio playback)
+  human_qa_comments: `
+    CREATE TABLE IF NOT EXISTS human_qa_comments (
+      id TEXT PRIMARY KEY,
+      human_qa_review_id TEXT NOT NULL,
+      timestamp_seconds INTEGER,
+      comment TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (human_qa_review_id) REFERENCES human_qa_reviews(id) ON DELETE CASCADE
     )
   `,
 };
@@ -298,13 +370,34 @@ const INDEXES = [
     name: 'idx_qa_highlights_user',
     sql: `CREATE INDEX IF NOT EXISTS idx_qa_highlights_user ON qa_highlights(user_id, created_at DESC)`
   },
+  // QA System indexes
   {
-    name: 'idx_qa_scores_call_scorer',
-    sql: `CREATE INDEX IF NOT EXISTS idx_qa_scores_call_scorer ON qa_scores(call_id, scorer_id)`
+    name: 'idx_ai_qa_results_call',
+    sql: `CREATE INDEX IF NOT EXISTS idx_ai_qa_results_call ON ai_qa_results(call_id)`
   },
   {
-    name: 'idx_qa_scores_scorer_status',
-    sql: `CREATE INDEX IF NOT EXISTS idx_qa_scores_scorer_status ON qa_scores(scorer_id, status)`
+    name: 'idx_ai_qa_results_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_ai_qa_results_status ON ai_qa_results(status)`
+  },
+  {
+    name: 'idx_ai_qa_criteria_scores_result',
+    sql: `CREATE INDEX IF NOT EXISTS idx_ai_qa_criteria_scores_result ON ai_qa_criteria_scores(ai_qa_result_id)`
+  },
+  {
+    name: 'idx_human_qa_reviews_call',
+    sql: `CREATE INDEX IF NOT EXISTS idx_human_qa_reviews_call ON human_qa_reviews(call_id)`
+  },
+  {
+    name: 'idx_human_qa_reviews_reviewer',
+    sql: `CREATE INDEX IF NOT EXISTS idx_human_qa_reviews_reviewer ON human_qa_reviews(reviewer_id)`
+  },
+  {
+    name: 'idx_human_qa_criteria_scores_review',
+    sql: `CREATE INDEX IF NOT EXISTS idx_human_qa_criteria_scores_review ON human_qa_criteria_scores(human_qa_review_id)`
+  },
+  {
+    name: 'idx_human_qa_comments_review',
+    sql: `CREATE INDEX IF NOT EXISTS idx_human_qa_comments_review ON human_qa_comments(human_qa_review_id)`
   },
   // Note: This index is created after migrations in initDatabase
 ];
@@ -351,6 +444,24 @@ const MIGRATIONS = [
   {
     name: 'add_agent_egress_id',
     sql: `ALTER TABLE call_sessions ADD COLUMN agent_egress_id TEXT;`,
+    fallback: 'Column may already exist'
+  },
+  // Add scoring_type column to qa_criteria
+  {
+    name: 'add_qa_criteria_scoring_type',
+    sql: `ALTER TABLE qa_criteria ADD COLUMN scoring_type TEXT DEFAULT 'scale' CHECK(scoring_type IN ('scale', 'binary'));`,
+    fallback: 'Column may already exist'
+  },
+  // Add max_score column to qa_criteria
+  {
+    name: 'add_qa_criteria_max_score',
+    sql: `ALTER TABLE qa_criteria ADD COLUMN max_score INTEGER DEFAULT 5;`,
+    fallback: 'Column may already exist'
+  },
+  // Add is_required column to qa_criteria
+  {
+    name: 'add_qa_criteria_is_required',
+    sql: `ALTER TABLE qa_criteria ADD COLUMN is_required BOOLEAN DEFAULT 0;`,
     fallback: 'Column may already exist'
   },
 ];
@@ -402,6 +513,10 @@ export async function initDatabase(): Promise<void> {
       console.log(`    ⏭️  Index 'idx_call_sessions_recording_status' skipped (column may not exist)`);
     }
     
+    // Seed default QA criteria
+    console.log('  Seeding QA criteria...');
+    await seedQACriteria();
+    
     console.log('✅ Database initialized successfully');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
@@ -419,5 +534,91 @@ export async function checkConnection(): Promise<boolean> {
   } catch (error) {
     console.error('Database connection failed:', error);
     return false;
+  }
+}
+
+/**
+ * Seed default QA criteria
+ * This creates the 5 default criteria for customer service QA
+ */
+export async function seedQACriteria(): Promise<void> {
+  try {
+    // Check if config exists
+    const configResult = await db.execute({
+      sql: 'SELECT id FROM qa_config WHERE id = ?',
+      args: ['default']
+    });
+    
+    if (configResult.rows.length === 0) {
+      // Create default config
+      await db.execute({
+        sql: 'INSERT INTO qa_config (id, name, description) VALUES (?, ?, ?)',
+        args: ['default', 'Customer Service QA', 'Standard customer service quality assessment']
+      });
+      console.log('[Database] Created default QA config');
+    }
+    
+    // Check if criteria exist
+    const criteriaResult = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM qa_criteria WHERE config_id = ?',
+      args: ['default']
+    });
+    
+    const count = (criteriaResult.rows[0]?.count as number) || 0;
+    
+    if (count === 0) {
+      // Insert 5 default criteria
+      const criteria = [
+        {
+          id: 'qc_opening',
+          sort_order: 1,
+          name: 'Opening & Greeting',
+          description: 'First impression and proper greeting',
+          ai_prompt: 'Did the operator properly greet the customer, introduce themselves, and set a positive tone in the first 30 seconds? Evaluate warmth, professionalism, and clarity of the opening.'
+        },
+        {
+          id: 'qc_empathy',
+          sort_order: 2,
+          name: 'Empathy & Understanding',
+          description: 'Emotional intelligence and customer understanding',
+          ai_prompt: 'Did the operator show genuine empathy, acknowledge the customer\'s feelings, and demonstrate understanding of their issue? Look for phrases like "I understand", "That must be frustrating", active listening, and emotional attunement.'
+        },
+        {
+          id: 'qc_resolution',
+          sort_order: 3,
+          name: 'Problem Resolution',
+          description: 'Effectiveness in solving the issue',
+          ai_prompt: 'Did the operator effectively identify the problem, provide accurate information, and resolve the issue efficiently? Evaluate problem diagnosis, solution quality, and resolution completeness.'
+        },
+        {
+          id: 'qc_professionalism',
+          sort_order: 4,
+          name: 'Professionalism',
+          description: 'Professional conduct throughout the call',
+          ai_prompt: 'Did the operator maintain a professional demeanor, use appropriate language, and stay calm throughout the call? Consider tone, language choice, patience, and handling of difficult moments.'
+        },
+        {
+          id: 'qc_closing',
+          sort_order: 5,
+          name: 'Closing & Next Steps',
+          description: 'Proper conclusion and follow-up',
+          ai_prompt: 'Did the operator properly summarize the resolution, confirm customer satisfaction, and provide clear next steps if needed? Evaluate if the customer was left with a positive final impression and clear understanding of what happens next.'
+        }
+      ];
+      
+      for (const c of criteria) {
+        await db.execute({
+          sql: `
+            INSERT INTO qa_criteria (id, config_id, sort_order, name, description, ai_prompt, scoring_type, max_score, weight, is_required)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          args: [c.id, 'default', c.sort_order, c.name, c.description, c.ai_prompt, 'scale', 5, 20, 1]
+        });
+      }
+      
+      console.log('[Database] Seeded 5 default QA criteria');
+    }
+  } catch (error) {
+    console.error('[Database] Error seeding QA criteria:', error);
   }
 }

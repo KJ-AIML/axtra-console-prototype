@@ -17,6 +17,10 @@ import {
   Recordings,
   RecordingDetail,
   QAScoring,
+  QAReviewQueue,
+  QAReviewDetail,
+  QACriteriaConfig,
+  QAReviewedCalls,
   Insights,
   KnowledgeBase,
   Offers,
@@ -100,7 +104,10 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
             <Route path="/active-calls" element={<ActiveCalls />} />
             <Route path="/recordings" element={<Recordings />} />
             <Route path="/recordings/:id" element={<RecordingDetail />} />
-            <Route path="/qa-scoring" element={<QAScoring />} />
+            <Route path="/qa-scoring" element={<QAReviewQueue />} />
+            <Route path="/qa-reviewed" element={<QAReviewedCalls />} />
+            <Route path="/qa-review/:callId" element={<QAReviewDetail />} />
+            <Route path="/qa-criteria-config" element={<QACriteriaConfig />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />
             <Route path="/offers" element={<Offers />} />

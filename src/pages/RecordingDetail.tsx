@@ -129,18 +129,26 @@ const RecordingDetail: React.FC = () => {
       
       // Load operator track (primary)
       if (channelsToLoad.includes('operator')) {
-        const opResponse = await fetch(`/api/recordings/${id}/audio?channel=operator`, {
+        let opResponse = await fetch(`/api/recordings/${id}/audio?channel=operator`, {
           headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         });
+        
+        // Fallback to agent track if operator not found
+        if (opResponse.status === 404) {
+          console.log('[RecordingDetail] Operator track not found, trying agent track as fallback');
+          opResponse = await fetch(`/api/recordings/${id}/audio?channel=agent`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          });
+        }
         
         if (!opResponse.ok) {
           if (opResponse.status === 401) {
             throw new Error('Authentication required. Please log in again.');
           } else if (opResponse.status === 404) {
-            setAudioError('Operator recording file not found. It may have been deleted or failed to upload.');
+            setAudioError('Recording file not found. It may have been deleted or failed to upload.');
             return;
           }
-          throw new Error(`Failed to load operator audio: ${opResponse.status}`);
+          throw new Error(`Failed to load audio: ${opResponse.status}`);
         }
         
         const opBlob = await opResponse.blob();
@@ -169,6 +177,19 @@ const RecordingDetail: React.FC = () => {
           const agentUrl = URL.createObjectURL(agentBlob);
           agentAudioUrlRef.current = agentUrl;
           setAgentAudioUrl(agentUrl);
+          
+          // If currently playing and in 'both' mode, start playing agent track immediately
+          if (isPlayingRef.current && audioChannel === 'both') {
+            // Small delay to ensure React has rendered the audio element
+            setTimeout(() => {
+              if (agentAudioRef.current && audioRef.current) {
+                agentAudioRef.current.currentTime = audioRef.current.currentTime;
+                agentAudioRef.current.play().catch(err => {
+                  console.log('[RecordingDetail] Auto-play agent track failed:', err);
+                });
+              }
+            }, 100);
+          }
         }
       }
       
@@ -243,6 +264,14 @@ const RecordingDetail: React.FC = () => {
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
+      
+      // Sync agent track to stay within 0.5 seconds of operator track
+      if (agentAudioRef.current && audioChannel === 'both' && isPlaying) {
+        const timeDiff = Math.abs(agentAudioRef.current.currentTime - audioRef.current.currentTime);
+        if (timeDiff > 0.5) {
+          agentAudioRef.current.currentTime = audioRef.current.currentTime;
+        }
+      }
     }
   };
 

@@ -19,12 +19,22 @@ npm install
 cp .env.local.example .env.local
 # Edit .env.local with your credentials
 
-# Start development
+# Terminal 1: Start frontend + Node.js backend (ports 3000 + 3001)
 npm run dev
+
+# Terminal 2: Start Python voice agent + Copilot
+cd server/agent/python-livekit
+uv run python livekit_agent_langchain.py dev
+
+# Terminal 3: Start Python AI services (summary + QA)
+cd server/agent/python-livekit
+uv run -m api.server
 ```
 
 **Access:** http://localhost:3000  
 **Demo Account:** admin@axtra.local / admin123
+
+> **Note:** `npm run dev` starts **both** the Vite frontend (port 3000) AND the Node.js API backend (port 3001) automatically via the `apiPlugin()` in Vite config. You don't need a separate terminal for the Node.js backend during development!
 
 ---
 

@@ -209,16 +209,39 @@ GOOGLE_API_KEY=your_gemini_key
 
 ### Step 8: Start the Application
 
-**Terminal 1 - Frontend + Backend:**
+You need **3 terminals** to run the full application:
+
+**Terminal 1 - Frontend + Node.js Backend:**
 ```bash
+# Starts both Vite frontend (port 3000) AND Node.js API (port 3001)
 npm run dev
 ```
+> ℹ️ **Note:** `npm run dev` automatically starts the Node.js backend via Vite's `apiPlugin()`. You don't need a separate command for the backend during development!
 
-**Terminal 2 - Python Agent (optional, for voice AI):**
+**Terminal 2 - Python Voice Agent + AXTRA Copilot:**
 ```bash
 cd server/agent/python-livekit
 uv run python livekit_agent_langchain.py dev
 ```
+> Required for: Real-time voice calls, AXTRA Copilot coaching
+
+**Terminal 3 - Python AI Services (Call Summary + QA):**
+```bash
+cd server/agent/python-livekit
+uv run -m api.server
+```
+> Required for: Post-call AI summary generation, AI QA analysis
+
+---
+
+### What's Running on Each Port?
+
+| Port | Service | Terminal Command |
+|------|---------|------------------|
+| 3000 | Vite Frontend (React) | `npm run dev` (included) |
+| 3001 | Node.js API Backend | `npm run dev` (auto-started) |
+| 8000 | Python Voice Agent | `uv run python livekit_agent_langchain.py dev` |
+| 8001 | Python AI Services | `uv run -m api.server` |
 
 ---
 
@@ -275,15 +298,27 @@ npm install
 - Verify `TURSO_AUTH_TOKEN` is correct
 - Check database URL format
 - Ensure token hasn't expired
+- Check if backend started (look for "API Server running" in terminal)
+
+### "API route not found" or 404 errors
+- Ensure `npm run dev` is running (starts backend automatically)
+- Check if backend started on port 3001
+- Try: `curl http://localhost:3001/api/health`
 
 ### "LiveKit not configured"
 - Check all LiveKit environment variables
 - Verify WebSocket URL starts with `wss://`
+- Ensure Python voice agent is running (Terminal 2)
 
 ### "Python agent not found"
 - Ensure you're in `server/agent/python-livekit`
 - Run `uv sync` to install dependencies
 - Check `.env` file exists with credentials
+
+### "AI Summary not generating"
+- Ensure Python AI service is running (Terminal 3)
+- Check: `curl http://localhost:8001/health`
+- Check console for error messages
 
 ---
 

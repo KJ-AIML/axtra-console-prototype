@@ -9,6 +9,7 @@ Understanding the system design and components.
 | Document | Description |
 |----------|-------------|
 | [Overview](./overview.md) | System architecture overview |
+| [Dev Server Architecture](./dev-server-architecture.md) | How dev servers work & port reference |
 | [Frontend](./frontend.md) | React + Vite + Tailwind architecture |
 | [Backend](./backend.md) | Node.js HTTP API |
 | [Database](./database.md) | Turso (libsql) schema |

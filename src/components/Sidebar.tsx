@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Puzzle,
+  SlidersHorizontal,
+  CheckCircle,
   type LucideIcon
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
@@ -65,6 +67,8 @@ const NAV_SECTIONS: NavSectionConfig[] = [
     items: [
       { id: 'recordings', label: 'Recordings', icon: MessageSquare },
       { id: 'qa-scoring', label: 'QA Scoring', icon: ShieldCheck },
+      { id: 'qa-reviewed', label: 'Reviewed Calls', icon: CheckCircle },
+      { id: 'qa-criteria', label: 'QA Criteria Config', icon: SlidersHorizontal },
       { id: 'trends', label: 'Insights', icon: TrendingUp, isAlpha: true },
     ],
   },
