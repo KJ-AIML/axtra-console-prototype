@@ -358,6 +358,94 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     );
   }
 
+  // Show processing overlay when ending call
+  if (isSaving) {
+    return (
+      <div className="h-full flex flex-col bg-white border-l border-r border-gray-200 relative">
+        {/* Processing Overlay */}
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/95 backdrop-blur-sm">
+          <div className="flex flex-col items-center max-w-md text-center px-6">
+            {/* Animated Spinner */}
+            <div className="relative mb-6">
+              <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 bg-indigo-600 rounded-full opacity-20 animate-pulse" />
+              </div>
+            </div>
+            
+            {/* Title */}
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              Processing Your Call
+            </h3>
+            
+            {/* Description */}
+            <p className="text-sm text-gray-500 mb-6">
+              We're analyzing your conversation and generating your personalized summary. This will only take a moment...
+            </p>
+            
+            {/* Progress Steps */}
+            <div className="w-full space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="text-emerald-600 font-medium">Call ended successfully</span>
+              </div>
+              
+              <div className="flex items-center gap-3 text-sm">
+                <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center animate-pulse">
+                  <div className="w-2 h-2 bg-indigo-600 rounded-full" />
+                </div>
+                <span className="text-indigo-600 font-medium">Analyzing conversation...</span>
+              </div>
+              
+              <div className="flex items-center gap-3 text-sm">
+                <div className="w-5 h-5 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                </div>
+                <span className="text-gray-400">Generating summary</span>
+              </div>
+            </div>
+            
+            {/* Fun Fact / Tip */}
+            <div className="mt-8 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+              <p className="text-xs text-indigo-700">
+                <span className="font-semibold">💡 Did you know?</span> Reviewing your call summaries helps identify patterns and improve your customer service skills over time.
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Background content (dimmed) */}
+        <div className="opacity-20 pointer-events-none">
+          <LiveKitConnectionStatus
+            isConnected={false}
+            isConnecting={false}
+            callDuration={callDuration}
+            coachingCount={coachingHistory.length}
+          />
+          <div className="p-4">
+            <LiveKitCallControls
+              isMuted={isMuted}
+              isPaused={isPaused}
+              isConnecting={false}
+              onToggleMute={toggleMute}
+              onTogglePause={togglePause}
+              onEndCall={handleEndCall}
+            />
+          </div>
+          <LiveKitTranscript
+            transcripts={transcripts}
+            isCallActive={false}
+            isPaused={false}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Show welcome screen before call starts
   if (showWelcome || (!isConnected && !isConnecting)) {
     return (

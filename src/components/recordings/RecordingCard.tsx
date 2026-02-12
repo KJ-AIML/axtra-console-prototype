@@ -99,7 +99,7 @@ export const RecordingCard: React.FC<RecordingCardProps> = ({
               onDelete();
             }}
             disabled={isDeleting}
-            className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
+            className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all z-20 relative"
             title="Delete recording"
           >
             <Trash2 className="w-4 h-4" />
@@ -166,9 +166,9 @@ export const RecordingCard: React.FC<RecordingCardProps> = ({
         </div>
       </div>
 
-      {/* Play Overlay */}
-      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 rounded-lg">
-        <div className="bg-white shadow-lg rounded-full p-3">
+      {/* Play Overlay - excludes the top-right area where delete button is */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 rounded-lg pointer-events-none">
+        <div className="bg-white shadow-lg rounded-full p-3 pointer-events-auto">
           <Play className="w-6 h-6 text-indigo-600 fill-indigo-600" />
         </div>
       </div>

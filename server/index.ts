@@ -909,8 +909,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           return;
         }
         
-        // Stream the file from R2 public URL (includes bucket name)
-        const r2PublicUrl = `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/axtraconsole001/${trackUrl}`;
+        // Stream the file from R2 public URL
+        const r2PublicUrl = `https://pub-92a788d074a940e5bd312e66668b86ea.r2.dev/${trackUrl}`;
         
         console.log('Fetching audio from R2:', r2PublicUrl);
         

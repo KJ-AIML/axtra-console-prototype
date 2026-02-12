@@ -9,9 +9,16 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "cleanup:r2": "tsx server/cleanup-r2-simple.ts",
+    "cleanup:r2:force": "tsx server/cleanup-r2-aws-sdk.ts --force",
+    "cleanup:r2:db": "tsx server/cleanup-r2-aws-sdk.ts --db-only",
+    "cleanup:recordings": "tsx server/cleanup-recordings.ts",
+    "cleanup:check": "tsx server/check-r2-config.ts",
+    "cleanup:help": "cat server/CLEANUP_R2_README.md"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.988.0",
     "@libsql/client": "^0.17.0",
     "@livekit/agents": "^1.0.41",
     "@livekit/agents-plugin-openai": "^1.0.41",

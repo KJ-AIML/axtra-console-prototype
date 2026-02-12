@@ -44,9 +44,12 @@ const RecordingDetail: React.FC = () => {
   const [duration, setDuration] = useState(0);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [audioObjectUrl, setAudioObjectUrl] = useState<string>('');
+  const [agentAudioUrl, setAgentAudioUrl] = useState<string>('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const agentAudioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const audioObjectUrlRef = useRef('');
+  const agentAudioUrlRef = useRef('');
   
   const {
     selectedRecording,
@@ -100,43 +103,87 @@ const RecordingDetail: React.FC = () => {
   };
 
   // Fetch audio with auth and create object URL
+  const [audioError, setAudioError] = useState<string>('');
+  
   const loadAudio = useCallback(async () => {
     if (!id) return;
     
     setIsLoadingAudio(true);
+    setAudioError('');
     try {
-      // Revoke old URL to prevent memory leak
+      // Revoke old URLs to prevent memory leak
       if (audioObjectUrlRef.current) {
         URL.revokeObjectURL(audioObjectUrlRef.current);
       }
-      
-      const channel = audioChannel === 'both' ? 'operator' : audioChannel;
-      const token = localStorage.getItem('axtra_token');
-      
-      const response = await fetch(`/api/recordings/${id}/audio?channel=${channel}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      });
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
-        } else if (response.status === 404) {
-          throw new Error('Audio file not found.');
-        }
-        throw new Error(`Failed to load audio: ${response.status}`);
+      if (agentAudioUrlRef.current) {
+        URL.revokeObjectURL(agentAudioUrlRef.current);
       }
       
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      audioObjectUrlRef.current = url;
-      setAudioObjectUrl(url);
+      const token = localStorage.getItem('axtra_token');
+      
+      // For 'both' mode, we need to load both tracks
+      // For individual channels, load only that track
+      const channelsToLoad = audioChannel === 'both' 
+        ? ['operator', 'agent'] 
+        : [audioChannel];
+      
+      // Load operator track (primary)
+      if (channelsToLoad.includes('operator')) {
+        const opResponse = await fetch(`/api/recordings/${id}/audio?channel=operator`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
+        
+        if (!opResponse.ok) {
+          if (opResponse.status === 401) {
+            throw new Error('Authentication required. Please log in again.');
+          } else if (opResponse.status === 404) {
+            setAudioError('Operator recording file not found. It may have been deleted or failed to upload.');
+            return;
+          }
+          throw new Error(`Failed to load operator audio: ${opResponse.status}`);
+        }
+        
+        const opBlob = await opResponse.blob();
+        const opUrl = URL.createObjectURL(opBlob);
+        audioObjectUrlRef.current = opUrl;
+        setAudioObjectUrl(opUrl);
+      }
+      
+      // Load agent track (secondary, for 'both' mode or 'agent' mode)
+      if (channelsToLoad.includes('agent')) {
+        const agentResponse = await fetch(`/api/recordings/${id}/audio?channel=agent`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
+        
+        if (!agentResponse.ok) {
+          if (agentResponse.status === 401) {
+            throw new Error('Authentication required. Please log in again.');
+          } else if (agentResponse.status === 404) {
+            // Agent track might not exist, that's ok
+            console.warn('Agent recording file not found');
+          } else {
+            throw new Error(`Failed to load agent audio: ${agentResponse.status}`);
+          }
+        } else {
+          const agentBlob = await agentResponse.blob();
+          const agentUrl = URL.createObjectURL(agentBlob);
+          agentAudioUrlRef.current = agentUrl;
+          setAgentAudioUrl(agentUrl);
+        }
+      }
       
       // Auto-play if was playing (use ref to avoid dependency)
-      if (audioRef.current && isPlayingRef.current) {
-        audioRef.current.play().catch(console.error);
+      if (isPlayingRef.current) {
+        if (audioRef.current) {
+          audioRef.current.play().catch(console.error);
+        }
+        if (agentAudioRef.current && audioChannel === 'both') {
+          agentAudioRef.current.play().catch(console.error);
+        }
       }
     } catch (error) {
       console.error('Failed to load audio:', error);
+      setAudioError('Failed to load recording. Please try again.');
     } finally {
       setIsLoadingAudio(false);
     }
@@ -151,11 +198,24 @@ const RecordingDetail: React.FC = () => {
     if (!audioRef.current) return;
     
     if (isPlaying) {
+      // Pause both tracks
       audioRef.current.pause();
+      if (agentAudioRef.current && audioChannel === 'both') {
+        agentAudioRef.current.pause();
+      }
       setIsPlaying(false);
     } else {
       try {
+        // Play operator track
         await audioRef.current.play();
+        
+        // Play agent track if in 'both' mode
+        if (agentAudioRef.current && audioChannel === 'both') {
+          // Sync the time
+          agentAudioRef.current.currentTime = audioRef.current.currentTime;
+          await agentAudioRef.current.play();
+        }
+        
         setIsPlaying(true);
       } catch (e) {
         console.error('Failed to play audio:', e);
@@ -169,10 +229,13 @@ const RecordingDetail: React.FC = () => {
       loadAudio();
     }
     
-    // Cleanup object URL on unmount
+    // Cleanup object URLs on unmount
     return () => {
       if (audioObjectUrlRef.current) {
         URL.revokeObjectURL(audioObjectUrlRef.current);
+      }
+      if (agentAudioUrlRef.current) {
+        URL.revokeObjectURL(agentAudioUrlRef.current);
       }
     };
   }, [audioChannel, selectedRecording, loadAudio]);
@@ -195,6 +258,10 @@ const RecordingDetail: React.FC = () => {
     setCurrentTime(time);
     if (audioRef.current) {
       audioRef.current.currentTime = time;
+    }
+    // Also sync agent track if in 'both' mode
+    if (agentAudioRef.current && audioChannel === 'both') {
+      agentAudioRef.current.currentTime = time;
     }
   };
 
@@ -337,14 +404,30 @@ const RecordingDetail: React.FC = () => {
       {/* Audio Player */}
       {selectedRecording?.has_recording && (
         <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-          {/* Hidden audio element - only render when URL is ready */}
+          {/* Hidden audio elements - only render when URLs are ready */}
           {audioObjectUrl && (
             <audio
               ref={audioRef}
               src={audioObjectUrl}
               onTimeUpdate={handleTimeUpdate}
               onLoadedMetadata={handleLoadedMetadata}
-              onEnded={() => setIsPlaying(false)}
+              onEnded={() => {
+                setIsPlaying(false);
+                // Also pause agent track if in 'both' mode
+                if (agentAudioRef.current && audioChannel === 'both') {
+                  agentAudioRef.current.pause();
+                }
+              }}
+            />
+          )}
+          {agentAudioUrl && audioChannel === 'both' && (
+            <audio
+              ref={agentAudioRef}
+              src={agentAudioUrl}
+              onEnded={() => {
+                // Sync play state - if one ends, consider both ended
+                setIsPlaying(false);
+              }}
             />
           )}
 
@@ -430,13 +513,23 @@ const RecordingDetail: React.FC = () => {
             </div>
           </div>
 
+          {/* Error Message */}
+          {audioError && (
+            <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <p className="text-sm text-rose-700">{audioError}</p>
+            </div>
+          )}
+
           {/* File Info */}
           <div className="mt-4 p-3 bg-gray-50 rounded-lg">
             <p className="text-xs text-gray-600">
-              <strong>Playing:</strong> {audioChannel === 'operator' ? 'Operator (You)' : audioChannel === 'agent' ? 'Customer (AI)' : 'Both tracks'}
+              <strong>Playing:</strong> {audioChannel === 'operator' ? 'Operator (You)' : audioChannel === 'agent' ? 'Customer (AI)' : 'Both tracks (Operator + Customer)'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              Note: Separate track playback requires stereo merge. Currently plays one track at a time.
+              {audioChannel === 'both' 
+                ? 'Both tracks are playing simultaneously. You can switch to individual channels to hear them separately.'
+                : 'Switch to "Both" to hear operator and customer together.'}
             </p>
           </div>
         </div>

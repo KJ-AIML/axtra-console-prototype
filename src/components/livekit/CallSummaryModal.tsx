@@ -122,12 +122,42 @@ export const CallSummaryModal = memo<CallSummaryModalProps>(function CallSummary
   // Loading state
   if (isLoading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="p-8 flex flex-col items-center justify-center min-h-[400px]">
-            <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900">Generating Call Summary...</h3>
-            <p className="text-sm text-gray-500 mt-1">Analyzing conversation and coaching data</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+          <div className="p-8 flex flex-col items-center">
+            {/* Animated Spinner */}
+            <div className="relative mb-6">
+              <div className="w-16 h-16 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 bg-indigo-600 rounded-full opacity-20 animate-pulse" />
+              </div>
+            </div>
+            
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Generating Your Summary</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              Our AI is analyzing your conversation patterns, coaching effectiveness, and customer satisfaction to create a personalized summary.
+            </p>
+            
+            {/* Progress Indicators */}
+            <div className="w-full space-y-3 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="text-sm text-indigo-600 font-medium ml-2">Processing transcript...</span>
+              </div>
+            </div>
+            
+            {/* Estimated time */}
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <Clock size={14} />
+              <span>Usually takes 2-3 seconds</span>
+            </div>
+          </div>
+          
+          {/* Progress bar */}
+          <div className="h-1 bg-gray-100 w-full">
+            <div className="h-full bg-indigo-600 w-2/3 animate-pulse" />
           </div>
         </div>
       </div>
