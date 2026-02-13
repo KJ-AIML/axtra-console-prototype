@@ -59,35 +59,67 @@ const QAReviewDetail: React.FC = () => {
 
   // Audio state
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const agentAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [agentAudioUrl, setAgentAudioUrl] = useState<string | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const agentAudioUrlRef = useRef<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [audioChannel, setAudioChannel] = useState<'operator' | 'agent' | 'both'>('both');
+  const shouldPlayAgentRef = useRef(false);
 
   // Fetch audio blob with auth
   const fetchAudio = useCallback(async (recordingId: string) => {
     setIsLoadingAudio(true);
     try {
-      const response = await apiClient.get(`/recordings/${recordingId}/audio?channel=operator`, {
-        responseType: 'blob'
-      });
-      const blob = response as unknown as Blob;
-      const url = URL.createObjectURL(blob);
-      setAudioUrl(url);
-    } catch (error: any) {
-      // Silently handle 404 (audio not available) - don't show error toast
-      if (error?.status === 404) {
-        console.log('Audio not available for this recording');
-      } else {
-        console.error('Failed to load audio:', error);
-        showError('Failed to load audio recording');
+      // Load operator track
+      try {
+        const opResponse = await apiClient.get(`/recordings/${recordingId}/audio?channel=operator`, {
+          responseType: 'blob'
+        });
+        const opBlob = opResponse as unknown as Blob;
+        const opUrl = URL.createObjectURL(opBlob);
+        audioUrlRef.current = opUrl;
+        setAudioUrl(opUrl);
+      } catch (error: any) {
+        if (error?.status !== 404) {
+          console.error('Failed to load operator audio:', error);
+        }
+      }
+      
+      // Load agent track
+      try {
+        const agentResponse = await apiClient.get(`/recordings/${recordingId}/audio?channel=agent`, {
+          responseType: 'blob'
+        });
+        const agentBlob = agentResponse as unknown as Blob;
+        const agentUrl = URL.createObjectURL(agentBlob);
+        agentAudioUrlRef.current = agentUrl;
+        setAgentAudioUrl(agentUrl);
+        
+        // If user clicked play before agent loaded, start playing now
+        if (shouldPlayAgentRef.current && audioChannel === 'both') {
+          shouldPlayAgentRef.current = false;
+          setTimeout(() => {
+            if (agentAudioRef.current && audioRef.current) {
+              agentAudioRef.current.currentTime = audioRef.current.currentTime;
+              agentAudioRef.current.play().catch(() => {});
+            }
+          }, 100);
+        }
+      } catch (error: any) {
+        if (error?.status !== 404) {
+          console.error('Failed to load agent audio:', error);
+        }
       }
     } finally {
       setIsLoadingAudio(false);
     }
-  }, []);
+  }, []);  // Never re-run, initial load only
 
   // Fetch data on mount
   useEffect(() => {
@@ -99,20 +131,37 @@ const QAReviewDetail: React.FC = () => {
     
     return () => {
       resetForm();
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
+      // Cleanup object URLs
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      if (agentAudioUrlRef.current) {
+        URL.revokeObjectURL(agentAudioUrlRef.current);
       }
     };
-  }, [callId, fetchQAData, fetchRecordingDetail, resetForm, fetchAudio]);
+  }, [callId, fetchQAData, fetchRecordingDetail, resetForm]);
 
   // Audio event handlers
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+      if (agentAudioRef.current && audioChannel === 'both' && isPlaying) {
+        const diff = Math.abs(agentAudioRef.current.currentTime - audio.currentTime);
+        if (diff > 0.5) {
+          agentAudioRef.current.currentTime = audio.currentTime;
+        }
+      }
+    };
     const handleLoadedMetadata = () => setDuration(audio.duration);
-    const handleEnded = () => setIsPlaying(false);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      if (agentAudioRef.current && audioChannel === 'both') {
+        agentAudioRef.current.pause();
+      }
+    };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -123,18 +172,35 @@ const QAReviewDetail: React.FC = () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [selectedRecording?.operator_track_url]);
+  }, [audioUrl, audioChannel, isPlaying]);
 
-  const togglePlay = useCallback(() => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
+  const togglePlay = useCallback(async () => {
+    if (!audioRef.current) return;
+    
+    if (isPlaying) {
+      audioRef.current.pause();
+      if (agentAudioRef.current && audioChannel === 'both') {
+        agentAudioRef.current.pause();
       }
-      setIsPlaying(!isPlaying);
+      setIsPlaying(false);
+      shouldPlayAgentRef.current = false;
+    } else {
+      try {
+        await audioRef.current.play();
+        
+        if (agentAudioRef.current && audioChannel === 'both') {
+          agentAudioRef.current.currentTime = audioRef.current.currentTime;
+          await agentAudioRef.current.play();
+        } else if (audioChannel === 'both' && !agentAudioUrl) {
+          shouldPlayAgentRef.current = true;
+        }
+        
+        setIsPlaying(true);
+      } catch (e) {
+        console.error('Failed to play:', e);
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, audioChannel, agentAudioUrl]);
 
   const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
@@ -142,7 +208,10 @@ const QAReviewDetail: React.FC = () => {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
-  }, []);
+    if (agentAudioRef.current && audioChannel === 'both') {
+      agentAudioRef.current.currentTime = time;
+    }
+  }, [audioChannel]);
 
   const handleSubmit = async (status: 'draft' | 'submitted') => {
     if (!callId) return;
@@ -242,6 +311,36 @@ const QAReviewDetail: React.FC = () => {
                   src={audioUrl}
                   className="hidden"
                 />
+                {agentAudioUrl && audioChannel === 'both' && (
+                  <audio
+                    ref={agentAudioRef}
+                    src={agentAudioUrl}
+                    className="hidden"
+                  />
+                )}
+                
+                {/* Channel Selector */}
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-sm text-gray-500">Channel:</span>
+                  {[
+                    { key: 'operator', label: 'You' },
+                    { key: 'agent', label: 'Customer' },
+                    { key: 'both', label: 'Both' },
+                  ].map((ch) => (
+                    <button
+                      key={ch.key}
+                      onClick={() => setAudioChannel(ch.key as any)}
+                      className={cn(
+                        'px-3 py-1 text-sm rounded-full transition-colors',
+                        audioChannel === ch.key
+                          ? 'bg-indigo-100 text-indigo-700'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      )}
+                    >
+                      {ch.label}
+                    </button>
+                  ))}
+                </div>
                 
                 {/* Controls */}
                 <div className="flex items-center gap-4 mb-4">

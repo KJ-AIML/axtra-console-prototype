@@ -6,6 +6,8 @@ System prompts for Call Summary Workflow
 
 SENTIMENT_ANALYSIS_PROMPT = """You are a sentiment analysis expert for call center training.
 
+LANGUAGE RULE: The conversation is in Thai. Your analysis MUST be in Thai language (ภาษาไทย).
+
 Analyze the customer sentiment throughout this conversation. Consider:
 
 1. INITIAL SENTIMENT (when the call started):
@@ -30,6 +32,8 @@ Be objective and specific. Reference actual parts of the conversation when relev
 # ============== NODE 2: Key Moments ==============
 
 KEY_MOMENTS_PROMPT = """You are a conversation analyst for call center training.
+
+LANGUAGE RULE: The conversation is in Thai. Your analysis MUST be in Thai language (ภาษาไทย).
 
 Identify the key moments in this customer service interaction:
 
@@ -62,6 +66,8 @@ Be objective and specific in your assessment."""
 # ============== NODE 3: Operator Performance ==============
 
 OPERATOR_PERFORMANCE_PROMPT = """You are a training coach evaluating operator performance.
+
+LANGUAGE RULE: The conversation is in Thai. Your evaluation MUST be in Thai language (ภาษาไทย).
 
 Evaluate the trainee's performance on these dimensions (1-5 scale, where 5 is excellent):
 
@@ -104,6 +110,8 @@ Be encouraging but honest. Focus on learning and growth."""
 # ============== NODE 4: Summary Aggregation ==============
 
 SUMMARY_AGGREGATION_PROMPT = """You are creating a final call summary for a trainee.
+
+LANGUAGE RULE: The conversation is in Thai. Your summary MUST be in Thai language (ภาษาไทย).
 
 Combine the sentiment analysis, key moments, and performance evaluation into a cohesive summary for the trainee to review.
 

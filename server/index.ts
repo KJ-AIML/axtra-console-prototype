@@ -970,9 +970,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         // Get content length if available
         const contentLength = r2Response.headers.get('content-length');
         
-        // Set response headers
+        // Set response headers with CORS
         const headers: Record<string, string> = {
           'Content-Type': 'audio/ogg',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         };
         if (contentLength) {
           headers['Content-Length'] = contentLength;

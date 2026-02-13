@@ -1,19 +1,22 @@
 # QA Scoring
 
-Manual quality assurance scoring system for call recordings with AI comparison.
+Manual quality assurance scoring system for call recordings with AI comparison and flexible criteria configuration.
 
 ---
 
 ## 🎯 Overview
 
-The QA Scoring system allows supervisors/managers to review call recordings and evaluate operator performance against standardized criteria. It supports comparing manual QA scores with AI-generated scores.
+The QA Scoring system allows supervisors/managers to review call recordings and evaluate operator performance against customizable criteria. It supports comparing manual QA scores with AI-generated scores and offers flexible scoring types.
 
 ### Features
 
-- **5-Category Rubric** - Professionalism, Empathy, Problem Solving, Script Adherence, Tone
+- **Flexible Criteria System** - Configure scale (1-N) or binary (yes/no) scoring types
+- **Weighted Scoring** - Optional weights for each criteria
+- **Required/Optional Criteria** - Mark criteria as required or optional
 - **Score Comparison** - QA vs AI vs Self (if operator self-scored)
 - **Draft/Submitted/Approved** Workflow - Flexible review process
 - **Comments & Notes** - Detailed feedback for each call
+- **Reviewed Calls Page** - View all completed QA reviews with statistics
 - **Call History** - Track scored calls over time
 
 ---
@@ -36,16 +39,16 @@ The QA Scoring system allows supervisors/managers to review call recordings and 
 │  │  Recording      │────▶│   QA Score      │────▶│  Score          │    │
 │  │  Detail Page    │     │   Form          │     │  Comparison     │    │
 │  │                 │     │                 │     │                 │    │
-│  │ - Audio player  │     │ - 5 categories  │     │ - QA score      │    │
-│  │ - Transcript    │     │ - Comments      │     │ - AI score      │    │
-│  │ - Coaching      │     │ - Save draft    │     │ - Difference    │    │
+│  │ - Audio player  │     │ - Dynamic       │     │ - QA score      │    │
+│  │ - Transcript    │     │   criteria      │     │ - AI score      │    │
+│  │ - Coaching      │     │ - Flexible      │     │ - Difference    │    │
 │  └─────────────────┘     └─────────────────┘     └─────────────────┘    │
 │           │                                                              │
 │           │ 2. Submit score                                              │
 │           ▼                                                              │
 │  ┌─────────────────┐                                                     │
 │  │   Database      │                                                     │
-│  │   (qa_scores)   │                                                     │
+│  │   (human_qa)    │                                                     │
 │  └─────────────────┘                                                     │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -53,35 +56,66 @@ The QA Scoring system allows supervisors/managers to review call recordings and 
 
 ---
 
-## 📋 QA Rubric
+## 📋 QA Criteria Configuration
 
-### 5 Scoring Categories (1-5 Scale)
+### Flexible Scoring Types
 
-| Category | Description | 1 (Poor) | 5 (Excellent) |
-|----------|-------------|----------|---------------|
-| **Professionalism** | Maintains professional demeanor | Unprofessional behavior | Exemplary professionalism |
-| **Empathy** | Shows understanding of customer | Dismissive of feelings | Makes customer feel heard |
-| **Problem Solving** | Effectively resolves issues | Unable to resolve | Creative, effective solutions |
-| **Script Adherence** | Follows approved scripts | Ignores scripts | Perfect adherence, adapts well |
-| **Tone & Manner** | Appropriate communication | Rude or condescending | Perfect tone adaptation |
+Each criteria can be configured with different scoring types:
 
-### Scoring Guide
+| Type | Description | Example |
+|------|-------------|---------|
+| **Scale** | 1 to max_score (configurable) | Professionalism (1-5), Knowledge (1-10) |
+| **Binary** | Yes/No or Pass/Fail | Greeting used? (Yes/No) |
+
+### Criteria Fields
 
 ```typescript
-// QA_RUBRIC in server/qa-scoring.ts
-const QA_RUBRIC = [
+interface QACriterion {
+  id: string;
+  name: string;              // Display name
+  description: string;       // Help text
+  type: 'scale' | 'binary';  // Scoring type
+  max_score?: number;        // For scale type (default: 5)
+  is_required: boolean;      // Must be scored?
+  weight?: number;           // Optional weight for calculation
+  order_index: number;       // Display order
+  is_active: boolean;        // Enabled/disabled
+}
+```
+
+### Example Criteria Config
+
+```typescript
+// Default criteria set
+const DEFAULT_QA_CRITERIA = [
   {
-    category: 'professionalism',
-    description: 'Maintains professional demeanor throughout the call',
-    criteria: [
-      { score: 1, label: 'Poor', description: '...' },
-      { score: 2, label: 'Below Average', description: '...' },
-      { score: 3, label: 'Average', description: '...' },
-      { score: 4, label: 'Good', description: '...' },
-      { score: 5, label: 'Excellent', description: '...' },
-    ]
+    id: 'qc_opening',
+    name: 'Opening & Greeting',
+    description: 'First impression and proper greeting',
+    type: 'scale',
+    max_score: 5,
+    is_required: true,
+    weight: 20,
+    order_index: 1
   },
-  // ... empathy, problem_solving, script_adherence, tone_manner
+  {
+    id: 'qc_empathy',
+    name: 'Empathy & Understanding',
+    description: 'Emotional intelligence',
+    type: 'scale',
+    max_score: 5,
+    is_required: true,
+    weight: 25,
+    order_index: 2
+  },
+  {
+    id: 'qc_script_compliance',
+    name: 'Script Compliance',
+    description: 'Followed required script',
+    type: 'binary',
+    is_required: false,
+    order_index: 3
+  }
 ];
 ```
 
@@ -92,20 +126,28 @@ const QA_RUBRIC = [
 ### 1. Score a Call
 
 ```typescript
-// Save QA score
+// Save QA score with dynamic criteria
 POST /api/qa/scores
 {
   "call_id": "call-uuid",
-  "professionalism": 4,
-  "empathy": 5,
-  "problem_solving": 4,
-  "script_adherence": 3,
-  "tone_manner": 4,
-  "overall_score": 80,  // Calculated or manual
+  "criteria_scores": [
+    {
+      "criterion_id": "qc_opening",
+      "score": 4,           // For scale: 1 to max_score
+      "comment": "Good greeting but could be warmer"
+    },
+    {
+      "criterion_id": "qc_script_compliance",
+      "score": 1,           // For binary: 1 = Yes, 0 = No
+      "comment": "Used required opening script"
+    }
+  ],
+  "overall_score": 85,      // Calculated or manual
+  "max_possible_score": 100,
   "strengths": "Good active listening...",
-  "improvements": "Could improve script adherence...",
+  "improvements": "Could improve closing...",
   "general_notes": "Overall good call...",
-  "status": "submitted"  // or "draft"
+  "status": "submitted"     // or "draft"
 }
 ```
 
@@ -124,36 +166,70 @@ POST /api/qa/scores
                         └───────────┘
 ```
 
-### 3. Score Comparison
+### 3. Reviewed Calls Page
 
-Compare multiple scores for the same call:
+Access completed QA reviews at `/qa-reviewed`:
+
+- **Statistics Overview** - Total reviewed, avg score, approval rate
+- **Filter & Search** - By date, reviewer, score range
+- **Comparison View** - AI vs Human scores side-by-side
+- **Export Options** - Download reports
 
 ```typescript
-interface ScoreComparison {
-  call_id: string;
-  
-  // QA Score (Manual)
-  qa_overall: number;
-  qa_breakdown: {
-    professionalism: number;
-    empathy: number;
-    // ...
-  };
-  
-  // AI Score (Generated)
-  ai_overall: number;
-  ai_satisfaction: number;
-  ai_effectiveness: number;
-  
-  // Difference
-  difference: number;  // QA - AI
-  variance: 'aligned' | 'minor' | 'significant';
+// Get reviewed calls
+GET /api/qa/reviewed?limit=20&offset=0
+
+Response:
+{
+  "calls": [
+    {
+      "call_id": "...",
+      "scenario_title": "Billing Dispute",
+      "operator_name": "John Doe",
+      "reviewer_name": "Supervisor A",
+      "human_score": 85,
+      "ai_score": 78,
+      "score_diff": 7,
+      "reviewed_at": "2024-01-15T10:30:00Z",
+      "status": "approved"
+    }
+  ],
+  "stats": {
+    "total_reviewed": 150,
+    "avg_human_score": 82.5,
+    "avg_ai_score": 79.2,
+    "approval_rate": 94
+  }
 }
 ```
 
 ---
 
 ## 📡 API Endpoints
+
+### Criteria Management
+
+```http
+# Get all active criteria
+GET /api/qa/criteria
+
+# Create new criterion
+POST /api/qa/criteria
+{
+  "name": "Professionalism",
+  "description": "Maintains professional demeanor",
+  "type": "scale",
+  "max_score": 5,
+  "is_required": true,
+  "weight": 20
+}
+
+# Update criterion
+PUT /api/qa/criteria/:id
+
+# Delete criterion
+DELETE /api/qa/criteria/:id
+```
 
 ### Create/Update QA Score
 
@@ -164,12 +240,12 @@ Content-Type: application/json
 
 {
   "call_id": "call-uuid",
-  "professionalism": 4,
-  "empathy": 5,
-  "problem_solving": 4,
-  "script_adherence": 3,
-  "tone_manner": 4,
-  "overall_score": 80,
+  "criteria_scores": [
+    {"criterion_id": "qc_opening", "score": 4, "comment": "..."},
+    {"criterion_id": "qc_empathy", "score": 5, "comment": "..."}
+  ],
+  "overall_score": 85,
+  "max_possible_score": 100,
   "strengths": "...",
   "improvements": "...",
   "general_notes": "...",
@@ -191,12 +267,17 @@ Authorization: Bearer {token}
   "call_id": "call-uuid",
   "scorer_id": "supervisor-uuid",
   "scored_at": "2024-01-15T10:30:00Z",
-  "professionalism": 4,
-  "empathy": 5,
-  "problem_solving": 4,
-  "script_adherence": 3,
-  "tone_manner": 4,
-  "overall_score": 80,
+  "criteria_scores": [
+    {
+      "criterion_id": "qc_opening",
+      "criterion_name": "Opening & Greeting",
+      "score": 4,
+      "max_score": 5,
+      "comment": "Good greeting"
+    }
+  ],
+  "overall_score": 85,
+  "max_possible_score": 100,
   "strengths": "Good active listening...",
   "improvements": "Could follow scripts more closely...",
   "general_notes": "Overall solid performance...",
@@ -223,9 +304,9 @@ Authorization: Bearer {token}
     "resolution_status": "resolved"
   },
   "score_comparison": {
-    "qa_overall": 80,
-    "ai_overall": 75,
-    "difference": 5,
+    "qa_overall": 85,
+    "ai_overall": 78,
+    "difference": 7,
     "variance": "aligned"
   }
 }
@@ -235,6 +316,13 @@ Authorization: Bearer {token}
 
 ```http
 GET /api/qa/review-queue?status=pending&limit=20
+Authorization: Bearer {token}
+```
+
+### Get Reviewed Calls
+
+```http
+GET /api/qa/reviewed?reviewer_id=xxx&limit=20&offset=0
 Authorization: Bearer {token}
 ```
 
@@ -249,24 +337,40 @@ Authorization: Bearer {token}
 
 ## 🗄️ Database Schema
 
-### qa_scores Table
+### qa_criteria Table
 
 ```sql
-CREATE TABLE qa_scores (
+CREATE TABLE qa_criteria (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  type TEXT NOT NULL CHECK (type IN ('scale', 'binary')),
+  max_score INTEGER DEFAULT 5,  -- For scale type
+  is_required BOOLEAN DEFAULT true,
+  weight INTEGER,               -- Optional weight
+  order_index INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_by TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### human_qa Table
+
+```sql
+CREATE TABLE human_qa (
   id TEXT PRIMARY KEY,
   call_id TEXT NOT NULL,
-  scorer_id TEXT NOT NULL,
-  scored_at TEXT NOT NULL,
+  reviewer_id TEXT NOT NULL,
+  reviewed_at TEXT NOT NULL,
   
-  -- 5 Category Scores (1-5)
-  professionalism INTEGER NOT NULL CHECK (professionalism BETWEEN 1 AND 5),
-  empathy INTEGER NOT NULL CHECK (empathy BETWEEN 1 AND 5),
-  problem_solving INTEGER NOT NULL CHECK (problem_solving BETWEEN 1 AND 5),
-  script_adherence INTEGER NOT NULL CHECK (script_adherence BETWEEN 1 AND 5),
-  tone_manner INTEGER NOT NULL CHECK (tone_manner BETWEEN 1 AND 5),
+  -- Flexible criteria scores stored as JSON
+  criteria_scores TEXT NOT NULL,  -- JSON: [{criterion_id, score, comment}]
   
-  -- Overall Score (0-100)
+  -- Overall scoring
   overall_score INTEGER NOT NULL CHECK (overall_score BETWEEN 0 AND 100),
+  max_possible_score INTEGER DEFAULT 100,
   
   -- Comments
   strengths TEXT,
@@ -282,13 +386,14 @@ CREATE TABLE qa_scores (
   
   -- Foreign Keys
   FOREIGN KEY (call_id) REFERENCES call_sessions(id) ON DELETE CASCADE,
-  FOREIGN KEY (scorer_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- Indexes
-CREATE INDEX idx_qa_scores_call ON qa_scores(call_id);
-CREATE INDEX idx_qa_scores_scorer ON qa_scores(scorer_id);
-CREATE INDEX idx_qa_scores_status ON qa_scores(status);
+CREATE INDEX idx_human_qa_call ON human_qa(call_id);
+CREATE INDEX idx_human_qa_reviewer ON human_qa(reviewer_id);
+CREATE INDEX idx_human_qa_status ON human_qa(status);
+CREATE INDEX idx_human_qa_reviewed_at ON human_qa(reviewed_at);
 ```
 
 ---
@@ -297,19 +402,29 @@ CREATE INDEX idx_qa_scores_status ON qa_scores(status);
 
 ### QAScoreForm
 
-Score input form with:
-- 5 category sliders (1-5)
-- Overall score calculation
-- Comments text areas
-- Save draft / Submit buttons
+Dynamic score input form with:
+- **Dynamic Criteria** - Renders based on configured criteria
+- **Scale Sliders** - 1 to max_score for scale type
+- **Binary Toggle** - Yes/No for binary type
+- **Score Calculation** - Real-time overall score preview
+- **Comments** - Per-criterion and general notes
+- **Save draft / Submit buttons**
 
 ### ScoreComparison
 
 Visual comparison showing:
 - QA vs AI scores side-by-side
 - Difference indicator (aligned/minor/significant)
-- Radar chart for category breakdown
+- Criteria breakdown
 - Trend over time (if multiple calls)
+
+### QAReviewedCalls Page
+
+`/qa-reviewed` page features:
+- Statistics cards (total, avg score, approval rate)
+- Filterable table of reviewed calls
+- AI vs Human score comparison
+- Quick view of review details
 
 ### RecordingCard
 
@@ -323,27 +438,36 @@ Recording list item with:
 
 ## 📊 Score Calculation
 
-### Overall Score Formula
+### Scale Criteria Scoring
 
 ```typescript
-// Option 1: Average of categories (converted to 0-100)
-overall = ((professionalism + empathy + problem_solving + script_adherence + tone_manner) / 25) * 100
+// Individual criterion percentage
+criterion_percentage = (score / max_score) * 100
 
-// Option 2: Weighted average
-overall = (
-  professionalism * 0.20 +
-  empathy * 0.25 +
-  problem_solving * 0.25 +
-  script_adherence * 0.15 +
-  tone_manner * 0.15
-) * 20  // Convert 1-5 to 0-100
+// Example: Score 4 out of 5
+percentage = (4 / 5) * 100 = 80%
 ```
 
-### AI Score Normalization
+### Binary Criteria Scoring
 
 ```typescript
-// Convert AI scores (1-5) to 0-100 for comparison
-ai_overall = ((customer_satisfaction + coaching_effectiveness) / 10) * 100
+// Binary score conversion
+percentage = score === 1 ? 100 : 0
+
+// Example: Yes = 100%, No = 0%
+```
+
+### Overall Score Calculation
+
+```typescript
+// With weights (weighted average)
+overall = sum(criterion_score * weight) / sum(weights)
+
+// Without weights (simple average)
+overall = sum(criterion_percentages) / count(criteria)
+
+// Convert to 0-100 scale
+final_score = Math.round(overall)
 ```
 
 ### Variance Levels
@@ -365,8 +489,18 @@ ai_overall = ((customer_satisfaction + coaching_effectiveness) / 10) * 100
 GET /api/calls/:callId
 
 # Check database constraints
-# - All 5 categories must be 1-5
-# - Overall score must be 0-100
+# - All required criteria must have scores
+# - Scores must be within valid range (0 to max_score)
+```
+
+### Criteria Not Loading
+
+```bash
+# Check criteria are active
+GET /api/qa/criteria
+
+# Verify criteria exist in database
+SELECT * FROM qa_criteria WHERE is_active = true;
 ```
 
 ### AI Score Missing

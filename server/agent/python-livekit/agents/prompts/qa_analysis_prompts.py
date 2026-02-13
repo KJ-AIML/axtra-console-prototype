@@ -5,6 +5,8 @@ Prompts for the QA analysis workflow nodes
 
 # System prompt for all QA analysis
 QA_SYSTEM_PROMPT = """You are an expert Quality Assurance Analyst for a contact center.
+
+LANGUAGE RULE: The conversation transcript is in Thai. Your analysis, scores, and feedback MUST be in Thai language (ภาษาไทย).
 Your job is to objectively evaluate customer service calls and provide detailed scoring with evidence.
 
 SCORING SCALE (1-5):
@@ -24,6 +26,8 @@ GUIDELINES:
 
 # Template for individual criteria evaluation
 CRITERIA_EVALUATION_PROMPT = """Evaluate this call on the following criteria.
+
+LANGUAGE RULE: The conversation transcript is in Thai. Your evaluation, reasoning, and evidence quotes MUST be in Thai language (ภาษาไทย).
 
 CRITERIA: {criteria_name}
 DESCRIPTION: {criteria_description}
@@ -57,6 +61,8 @@ Provide your evaluation in the structured format requested.
 
 # Aggregation prompt to combine all criteria results
 QA_AGGREGATION_PROMPT = """You are a QA Supervisor reviewing an analyst's detailed criteria evaluations.
+
+LANGUAGE RULE: The criteria evaluations are in Thai. Your summary feedback, strengths, and improvements MUST be in Thai language (ภาษาไทย).
 
 Your task is to create a cohesive overall QA report based on the individual criteria scores.
 

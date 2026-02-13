@@ -1,12 +1,12 @@
 # Call Recording
 
-Dual-track audio recording system using LiveKit Egress and Cloudflare R2 storage.
+Dual-track audio recording system using LiveKit Egress and Cloudflare R2 storage with synchronized playback.
 
 ---
 
 ## 🎯 Overview
 
-The Call Recording system captures both operator and agent audio during voice calls, stores them in Cloudflare R2, and provides playback with channel selection.
+The Call Recording system captures both operator and agent audio during voice calls, stores them in Cloudflare R2, and provides synchronized playback with channel selection.
 
 ### Features
 
@@ -14,6 +14,8 @@ The Call Recording system captures both operator and agent audio during voice ca
 - **Cloud Storage** - Cloudflare R2 for scalable storage
 - **Auto Start/Stop** - Recording starts when call begins, stops when ends
 - **Audio Playback** - In-browser player with channel selection (Both/You/Customer)
+- **Synchronized Playback** - Both tracks play in sync when "Both" selected
+- **CORS Support** - Proper headers for cross-origin audio streaming
 - **Secure Access** - Proxied through backend to protect R2 credentials
 
 ---
@@ -52,7 +54,7 @@ The Call Recording system captures both operator and agent audio during voice ca
 │         │                          │   (Storage)     │                   │
 │         │                          └─────────────────┘                   │
 │         │                                                                │
-│         │ Playback (Proxy)                                               │
+│         │ Playback (Proxy with CORS)                                     │
 │         │◄───────────────────────────────────────────────────────────────┤
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -90,7 +92,20 @@ LiveKit Egress captures audio via WebSocket:
 - **Agent Track** - `participant_agent_audio_track`
 - **Format** - OGG Opus (compressed audio)
 
-### 3. Auto-Stop Recording
+### 3. File Storage Format
+
+Files stored in Cloudflare R2 (without timestamp in filename):
+
+```
+recordings/
+├── {call-id}/
+│   ├── operator.ogg      # Operator audio
+│   └── agent.ogg         # Agent (customer) audio
+```
+
+> **Note:** LiveKit adds its own timestamp to the file, so we don't include one in the path.
+
+### 4. Auto-Stop Recording
 
 When call ends (`endCallAndSave`):
 
@@ -107,17 +122,6 @@ async endCallAndSave() {
 }
 ```
 
-### 4. Storage
-
-Files stored in Cloudflare R2:
-
-```
-recordings/
-├── {call-id}/
-│   ├── operator-{timestamp}.ogg
-│   └── agent-{timestamp}.ogg
-```
-
 ---
 
 ## ⚙️ Configuration
@@ -132,9 +136,26 @@ EGRESS_S3_SECRET_KEY=your_secret_key
 EGRESS_S3_BUCKET=axtra-recordings
 EGRESS_S3_REGION=auto
 
+# R2 Public URL (for direct access)
+EGRESS_S3_PUBLIC_URL=https://pub-xxx.r2.dev
+
 # Optional: Custom R2 Public URL
 # If not set, uses presigned URLs
-# EGRESS_S3_PUBLIC_URL=https://cdn.yourdomain.com
+```
+
+### R2 CORS Configuration
+
+For audio playback to work, configure CORS on your R2 bucket:
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3600
+  }
+]
 ```
 
 ### LiveKit Egress Setup
@@ -187,9 +208,26 @@ Authorization: Bearer {token}
 **Channels:**
 - `operator` - Operator audio only
 - `agent` - Agent (customer) audio only
-- `both` - Mixed stereo (if available) or operator track
+- `both` - Returns operator track (both loaded separately in UI)
 
-**Response:** Audio file (OGG format)
+**Response:** Audio file (OGG format) with CORS headers:
+```
+Content-Type: audio/ogg
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, OPTIONS
+```
+
+### URL Variations Fallback
+
+The audio endpoint tries multiple URL patterns for compatibility:
+
+```typescript
+const urlVariations = [
+  `${R2_PUBLIC_URL}/${trackUrl}`,
+  `${R2_PUBLIC_URL}/${trackUrl}.ogg`,
+  `${R2_PUBLIC_URL}/${trackUrl.slice(0, -4)}`  // Without .ogg
+];
+```
 
 ---
 
@@ -203,30 +241,80 @@ The audio player supports:
 - **Speed control** - 0.5x, 1x, 1.5x, 2x
 - **Channel selection** - Both/You/Customer
 - **Volume** control
+- **Synchronized playback** - Both tracks stay in sync
 
 ### Channel Selection
 
 ```typescript
-// RecordingDetail.tsx
+// RecordingDetail.tsx / QAReviewDetail.tsx
 const [audioChannel, setAudioChannel] = useState<'operator' | 'agent' | 'both'>('both');
 
 // When 'both' selected, loads and synchronizes two audio elements
 // When 'operator' or 'agent', loads single track
 ```
 
-### Sync Playback (Both Channels)
+### Dual Audio Implementation
+
+```typescript
+// State management
+const [audioUrl, setAudioUrl] = useState<string | null>(null);        // Operator
+const [agentAudioUrl, setAgentAudioUrl] = useState<string | null>(null); // Agent
+const audioRef = useRef<HTMLAudioElement>(null);
+const agentAudioRef = useRef<HTMLAudioElement>(null);
+```
+
+### Synchronized Playback
 
 When playing both tracks:
 
 ```typescript
-// togglePlay() - Plays both tracks simultaneously
-await Promise.all([
-  audioRef.current.play(),      // Operator
-  agentAudioRef.current.play()  // Agent
-]);
+const togglePlay = async () => {
+  if (isPlaying) {
+    audioRef.current?.pause();
+    agentAudioRef.current?.pause();
+    setIsPlaying(false);
+  } else {
+    // Play both tracks simultaneously
+    const playPromises = [];
+    if (audioRef.current) {
+      playPromises.push(audioRef.current.play());
+    }
+    if (agentAudioRef.current && audioChannel === 'both') {
+      playPromises.push(agentAudioRef.current.play());
+    }
+    await Promise.all(playPromises);
+    setIsPlaying(true);
+  }
+};
 
-// handleSeek() - Seeks both tracks together
-agentAudioRef.current.currentTime = audioRef.current.currentTime;
+// Keep tracks synchronized on seek
+const handleSeek = (time: number) => {
+  if (audioRef.current) {
+    audioRef.current.currentTime = time;
+  }
+  if (agentAudioRef.current && audioChannel === 'both') {
+    agentAudioRef.current.currentTime = time;
+  }
+};
+```
+
+### Auto-Play Agent Track
+
+If user clicks play before agent track loads:
+
+```typescript
+const shouldPlayAgentRef = useRef(false);
+
+// When user clicks play
+shouldPlayAgentRef.current = true;
+
+// When agent track loads
+useEffect(() => {
+  if (agentAudioUrl && shouldPlayAgentRef.current) {
+    agentAudioRef.current?.play();
+    shouldPlayAgentRef.current = false;
+  }
+}, [agentAudioUrl]);
 ```
 
 ---
@@ -245,6 +333,49 @@ ALTER TABLE call_sessions ADD COLUMN (
   recording_status TEXT DEFAULT 'pending'
     CHECK (recording_status IN ('pending', 'starting', 'recording', 'completed', 'failed'))
 );
+```
+
+---
+
+## 🛠️ Audio Playback Fixes
+
+### R2 URL Mismatch Fix
+
+**Problem:** LiveKit adds timestamps to filenames, causing URL mismatches.
+
+**Solution:** Store path without timestamp, construct URLs consistently:
+
+```typescript
+// egress-service.ts
+function getFilePath(filepath: string): string {
+  return `${filepath}.ogg`;  // Removed timestamp - LiveKit adds its own
+}
+```
+
+### CORS Headers
+
+Added CORS headers to audio streaming response:
+
+```typescript
+// server/index.ts
+const headers: Record<string, string> = {
+  'Content-Type': 'audio/ogg',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+```
+
+### URL Variations Fallback
+
+Multiple URL patterns for compatibility:
+
+```typescript
+const urlVariations = [
+  `https://pub-xxx.r2.dev/${trackUrl}`,
+  !trackUrl.endsWith('.ogg') ? `https://pub-xxx.r2.dev/${trackUrl}.ogg` : null,
+  trackUrl.endsWith('.ogg') ? `https://pub-xxx.r2.dev/${trackUrl.slice(0, -4)}` : null,
+].filter(Boolean);
 ```
 
 ---
@@ -300,12 +431,20 @@ curl https://your-project.livekit.cloud/
 
 3. **Verify audio format** - Should be OGG Opus
 
+4. **Check browser console** for CORS errors
+
 ### Recording Status Stuck
 
 ```bash
 # Check recording status via API
 GET /api/calls/:callId/recording/status
 ```
+
+### Dual Audio Out of Sync
+
+- Both tracks use the same `currentTime` reference
+- Seek operations update both tracks simultaneously
+- Auto-play agent track when it finishes loading
 
 ---
 
