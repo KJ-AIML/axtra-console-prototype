@@ -266,6 +266,7 @@ export const SCHEMA = {
       max_score INTEGER DEFAULT 5,
       weight INTEGER DEFAULT 0,
       is_required BOOLEAN DEFAULT 0,
+      is_active BOOLEAN DEFAULT 1,
       FOREIGN KEY (config_id) REFERENCES qa_config(id)
     )
   `,
@@ -462,6 +463,12 @@ const MIGRATIONS = [
   {
     name: 'add_qa_criteria_is_required',
     sql: `ALTER TABLE qa_criteria ADD COLUMN is_required BOOLEAN DEFAULT 0;`,
+    fallback: 'Column may already exist'
+  },
+  // Add is_active column to qa_criteria for soft delete
+  {
+    name: 'add_qa_criteria_is_active',
+    sql: `ALTER TABLE qa_criteria ADD COLUMN is_active BOOLEAN DEFAULT 1;`,
     fallback: 'Column may already exist'
   },
 ];

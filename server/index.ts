@@ -1146,32 +1146,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
     
-    // Get complete QA data (AI + Human) for a call
-    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1]) {
-      if (!token) {
-        sendJson(res, 401, { error: 'Unauthorized' });
-        return;
-      }
-      
-      const user = await validateSession(token);
-      
-      if (!user) {
-        sendJson(res, 401, { error: 'Invalid or expired session' });
-        return;
-      }
-      
-      const callId = segments[1];
-      
-      try {
-        const qaData = await getCompleteQAData(callId, user.id);
-        sendJson(res, 200, { success: true, data: qaData });
-      } catch (error) {
-        console.error('Get QA data error:', error);
-        sendJson(res, 500, { error: 'Failed to get QA data' });
-      }
-      return;
-    }
-    
     // Get QA criteria
     if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'criteria') {
       if (!token) {
@@ -1460,6 +1434,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('Delete QA score error:', error);
         sendJson(res, 500, { error: 'Failed to delete score' });
+      }
+      return;
+    }
+
+    // Get complete QA data (AI + Human) for a call
+    // Keep this route after all specific /qa/* routes to avoid path collisions.
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1]) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const callId = segments[1];
+      
+      try {
+        const qaData = await getCompleteQAData(callId, user.id);
+        sendJson(res, 200, { success: true, data: qaData });
+      } catch (error) {
+        console.error('Get QA data error:', error);
+        sendJson(res, 500, { error: 'Failed to get QA data' });
       }
       return;
     }

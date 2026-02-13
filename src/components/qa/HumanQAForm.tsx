@@ -48,13 +48,6 @@ const getScoreColor = (normalizedScore: number): string => {
   return 'text-rose-600';
 };
 
-// Get score background color
-const getScoreBg = (normalizedScore: number): string => {
-  if (normalizedScore >= 80) return 'bg-emerald-50';
-  if (normalizedScore >= 60) return 'bg-amber-50';
-  return 'bg-rose-50';
-};
-
 // Binary score toggle component
 const BinaryScoreInput: React.FC<{
   score: number;
@@ -109,12 +102,12 @@ const ScaleScoreInput: React.FC<{
         <div className="relative">
           <input
             type="number"
-            min={0}
+            min={1}
             max={maxScore}
             value={score}
             onChange={(e) => {
-              const val = parseInt(e.target.value) || 0;
-              onChange(Math.min(maxScore, Math.max(0, val)));
+              const val = parseInt(e.target.value) || 1;
+              onChange(Math.min(maxScore, Math.max(1, val)));
             }}
             disabled={disabled}
             className={cn(
@@ -126,7 +119,7 @@ const ScaleScoreInput: React.FC<{
         </div>
         <input
           type="range"
-          min={0}
+          min={1}
           max={maxScore}
           value={score}
           onChange={(e) => onChange(parseInt(e.target.value))}
@@ -178,36 +171,36 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
 }) => {
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
 
-  // Calculate weighted overall score (only for criteria with weight > 0)
-  const weightedCriteria = criteria.filter(c => c.weight > 0);
-  const totalWeight = weightedCriteria.reduce((sum, c) => sum + c.weight, 0);
-  
-  let overallScore = 0;
-  let aiOverallScore = 0;
-  
-  if (totalWeight > 0) {
-    const weightedScore = weightedCriteria.reduce((sum, c) => {
-      const score = humanScores[c.id];
-      if (score === undefined) return sum;
-      const maxScore = c.scoring_type === 'binary' ? 1 : c.max_score;
-      const normalizedScore = (score / maxScore) * 100;
-      return sum + (normalizedScore * c.weight);
-    }, 0);
-    overallScore = Math.round(weightedScore / totalWeight);
+  // Auto scoring: equal weight across all criteria.
+  const normalizedHumanScores = criteria.map((c) => {
+    const maxScore = c.scoring_type === 'binary' ? 1 : c.max_score;
+    const defaultScore = c.scoring_type === 'binary' ? 1 : Math.round(maxScore / 2);
+    const currentScore = humanScores[c.id] ?? aiScores.find((s) => s.criteria_id === c.id)?.score ?? defaultScore;
+    if (c.scoring_type === 'binary') {
+      return currentScore >= 1 ? 100 : 0;
+    }
+    return normalizeScore(currentScore, maxScore);
+  });
+  const overallScore = normalizedHumanScores.length > 0
+    ? Math.round(normalizedHumanScores.reduce((sum, score) => sum + score, 0) / normalizedHumanScores.length)
+    : 0;
 
-    // AI weighted score
-    const aiWeightedScore = weightedCriteria.reduce((sum, c) => {
-      const aiScore = aiScores.find(s => s.criteria_id === c.id);
-      if (!aiScore) return sum;
+  const normalizedAIScores = criteria
+    .map((c) => {
+      const aiScore = aiScores.find((s) => s.criteria_id === c.id);
+      if (!aiScore) return null;
       const maxScore = c.scoring_type === 'binary' ? 1 : c.max_score;
-      const normalizedScore = (aiScore.score / maxScore) * 100;
-      return sum + (normalizedScore * c.weight);
-    }, 0);
-    aiOverallScore = Math.round(aiWeightedScore / totalWeight);
-  }
+      if (c.scoring_type === 'binary') {
+        return aiScore.score >= 1 ? 100 : 0;
+      }
+      return normalizeScore(aiScore.score, maxScore);
+    })
+    .filter((score): score is number => score !== null);
+  const aiOverallScore = normalizedAIScores.length > 0
+    ? Math.round(normalizedAIScores.reduce((sum, score) => sum + score, 0) / normalizedAIScores.length)
+    : 0;
 
   const difference = overallScore - aiOverallScore;
-  const hasWeightedCriteria = weightedCriteria.length > 0;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -227,31 +220,22 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
           </div>
         </div>
         <div className="text-right">
-          {hasWeightedCriteria ? (
-            <>
-              <div className={cn(
-                'text-3xl font-bold',
-                overallScore >= 80 ? 'text-emerald-600' :
-                overallScore >= 60 ? 'text-amber-600' :
-                'text-rose-600'
-              )}>
-                {overallScore}
-              </div>
-              <div className="text-sm text-gray-500">Overall Score</div>
-              {difference !== 0 && (
-                <div className={cn(
-                  'text-xs font-medium',
-                  difference > 0 ? 'text-emerald-600' : 'text-rose-600'
-                )}>
-                  {difference > 0 ? '+' : ''}{difference} vs AI
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="text-lg font-bold text-gray-600">No Weight</div>
-              <div className="text-sm text-gray-500">Informational only</div>
-            </>
+          <div className={cn(
+            'text-3xl font-bold',
+            overallScore >= 80 ? 'text-emerald-600' :
+            overallScore >= 60 ? 'text-amber-600' :
+            'text-rose-600'
+          )}>
+            {overallScore}
+          </div>
+          <div className="text-sm text-gray-500">Overall Score (Auto)</div>
+          {normalizedAIScores.length > 0 && difference !== 0 && (
+            <div className={cn(
+              'text-xs font-medium',
+              difference > 0 ? 'text-emerald-600' : 'text-rose-600'
+            )}>
+              {difference > 0 ? '+' : ''}{difference} vs AI
+            </div>
           )}
         </div>
       </div>
@@ -275,13 +259,8 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-medium text-gray-900">{c.name}</h4>
                     <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                      {c.scoring_type === 'binary' ? 'Yes/No' : `0-${c.max_score}`}
+                      {c.scoring_type === 'binary' ? 'Yes/No' : `1-${c.max_score}`}
                     </span>
-                    {c.weight > 0 && (
-                      <span className="text-xs text-indigo-600 font-medium">
-                        Weight: {c.weight}%
-                      </span>
-                    )}
                     {c.is_required && (
                       <span className="text-xs px-2 py-0.5 bg-rose-100 text-rose-600 rounded">
                         Required
@@ -305,17 +284,15 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
                   )}
                   
                   {/* Current Score Display */}
-                  {c.weight > 0 && (
-                    <div className={cn(
-                      'text-lg font-bold',
-                      getScoreColor(normalizedCurrentScore)
-                    )}>
-                      {c.scoring_type === 'binary' 
-                        ? (currentScore === 1 ? 'Pass' : 'Fail')
-                        : `${Math.round(normalizedCurrentScore)}%`
-                      }
-                    </div>
-                  )}
+                  <div className={cn(
+                    'text-lg font-bold',
+                    getScoreColor(normalizedCurrentScore)
+                  )}>
+                    {c.scoring_type === 'binary' 
+                      ? (currentScore === 1 ? 'Pass' : 'Fail')
+                      : `${Math.round(normalizedCurrentScore)}%`
+                    }
+                  </div>
                 </div>
               </div>
 
@@ -335,11 +312,9 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
                     disabled={existingReview?.status === 'submitted'}
                   />
                 )}
-                {c.weight > 0 && (
-                  <span className={cn('text-sm font-medium ml-3', getScoreColor(normalizedCurrentScore))}>
-                    {getScoreLabel(normalizedCurrentScore)}
-                  </span>
-                )}
+                <span className={cn('text-sm font-medium ml-3', getScoreColor(normalizedCurrentScore))}>
+                  {getScoreLabel(normalizedCurrentScore)}
+                </span>
               </div>
 
               {/* Comment Field */}
@@ -424,20 +399,13 @@ export const HumanQAForm: React.FC<HumanQAFormProps> = ({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-2">Submit QA Review?</h3>
-            {hasWeightedCriteria ? (
-              <p className="text-gray-600 mb-6">
-                You are about to submit your QA review with an overall score of{' '}
-                <span className={cn('font-bold', getScoreColor(overallScore))}>
-                  {overallScore}/100
-                </span>
-                . This will finalize your assessment.
-              </p>
-            ) : (
-              <p className="text-gray-600 mb-6">
-                You are about to submit your QA review. No weighted score will be calculated
-                as all criteria are informational only.
-              </p>
-            )}
+            <p className="text-gray-600 mb-6">
+              You are about to submit your QA review with an overall score of{' '}
+              <span className={cn('font-bold', getScoreColor(overallScore))}>
+                {overallScore}/100
+              </span>
+              . This will finalize your assessment.
+            </p>
             <div className="flex items-center justify-end gap-3">
               <Button
                 variant="secondary"

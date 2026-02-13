@@ -16,6 +16,17 @@ interface QAAnalysisPayload {
   duration_seconds: number;
   total_turns: number;
   scenario_type: string;
+  criteria?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    prompt?: string;
+    ai_prompt?: string;
+    scoring_type?: 'scale' | 'binary';
+    max_score?: number;
+    weight?: number;
+    is_required?: boolean;
+  }>;
 }
 
 interface QACriteriaScore {

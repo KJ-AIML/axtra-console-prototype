@@ -258,8 +258,14 @@ export const useQAStore = create<QAState>((set, get) => ({
     set({ isLoadingCriteria: true });
     
     try {
-      const response = await apiClient.get('/qa/criteria');
-      set({ criteria: response.data || [], isLoadingCriteria: false });
+      const response = await apiClient.get<any>('/qa/criteria');
+      const payload = response?.data;
+      const criteria = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.criteria)
+        ? payload.criteria
+        : [];
+      set({ criteria, isLoadingCriteria: false });
     } catch (error) {
       console.error('Failed to fetch criteria:', error);
       set({ isLoadingCriteria: false });
@@ -313,21 +319,22 @@ export const useQAStore = create<QAState>((set, get) => ({
       };
     });
     
-    // Calculate weighted overall score (only for criteria with weight > 0)
-    const weightedCriteria = state.criteria.filter(c => c.weight > 0);
-    const totalWeight = weightedCriteria.reduce((sum, c) => sum + c.weight, 0);
-    
-    let overall_score = 0;
-    if (totalWeight > 0) {
-      const weightedScore = weightedCriteria.reduce((sum, c) => {
-        const cs = criteria_scores.find(s => s.criteria_id === c.id);
-        if (!cs) return sum;
-        const maxScore = c.scoring_type === 'binary' ? 1 : c.max_score;
-        const normalizedScore = (cs.score / maxScore) * 100;
-        return sum + (normalizedScore * c.weight);
-      }, 0);
-      overall_score = Math.round(weightedScore / totalWeight);
-    }
+    // Auto scoring: equal weight across all configured criteria.
+    const normalizedScores = state.criteria.map((c) => {
+      const cs = criteria_scores.find((s) => s.criteria_id === c.id);
+      if (!cs) return 0;
+
+      if (c.scoring_type === 'binary') {
+        return cs.score >= 1 ? 100 : 0;
+      }
+
+      const maxScore = c.max_score || 5;
+      return (cs.score / maxScore) * 100;
+    });
+
+    const overall_score = normalizedScores.length > 0
+      ? Math.round(normalizedScores.reduce((sum, score) => sum + score, 0) / normalizedScores.length)
+      : 0;
     
     try {
       await apiClient.post('/qa/reviews', {

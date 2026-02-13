@@ -84,6 +84,128 @@ export interface QAReviewQueueItem {
   created_at: string;
 }
 
+function normalizeScoringType(value: unknown): ScoringType {
+  if (value === 'binary' || value === 'binary_yes_no') return 'binary';
+  if (value === 'scale') return 'scale';
+  // Legacy values found in older rows.
+  if (value === 'percentage' || value === 'scale_5' || value === 'scale_10') return 'scale';
+  return 'scale';
+}
+
+function deriveMaxScore(scoringTypeRaw: unknown, scoringType: ScoringType, maxScore: unknown): number {
+  if (scoringTypeRaw === 'binary_yes_no') return 1;
+  if (scoringTypeRaw === 'scale_5') return 5;
+  if (scoringTypeRaw === 'scale_10') return 10;
+
+  if (scoringType === 'binary') return 1;
+
+  const parsed = Number(maxScore);
+  if (!Number.isFinite(parsed)) {
+    if (scoringTypeRaw === 'percentage') return 100;
+    return 5;
+  }
+  return Math.min(1000, Math.max(1, Math.round(parsed)));
+}
+
+function sanitizeWeight(weight: unknown): number {
+  const parsed = Number(weight);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+
+function isScoringTypeConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('CHECK constraint failed') && message.includes('scoring_type');
+}
+
+function toLegacyScoringType(scoringType: ScoringType, maxScore: number): string {
+  if (scoringType === 'binary') return 'binary_yes_no';
+  if (maxScore === 10) return 'scale_10';
+  if (maxScore === 5) return 'scale_5';
+  return 'percentage';
+}
+
+function toBinaryLogicalScore(score: number): number {
+  if (score > 1) {
+    return score >= 3 ? 1 : 0;
+  }
+  return score >= 1 ? 1 : 0;
+}
+
+function logicalToStoredScore(
+  logicalScore: number,
+  scoringType: ScoringType,
+  maxScore: number
+): number {
+  if (scoringType === 'binary') {
+    const binaryValue = toBinaryLogicalScore(logicalScore);
+    return binaryValue === 1 ? 5 : 1;
+  }
+
+  if (maxScore <= 1) {
+    return 1;
+  }
+
+  // Map 1..maxScore into 1..5 for storage compatibility.
+  const clamped = Math.min(maxScore, Math.max(1, Math.round(logicalScore)));
+  const normalized = (clamped - 1) / (maxScore - 1);
+  const stored = Math.round(normalized * 4) + 1;
+  return Math.min(5, Math.max(1, stored));
+}
+
+function storedToLogicalScore(
+  storedScore: number,
+  scoringType: ScoringType,
+  maxScore: number
+): number {
+  const clampedStored = Math.min(5, Math.max(1, Math.round(storedScore)));
+
+  if (scoringType === 'binary') {
+    return clampedStored >= 3 ? 1 : 0;
+  }
+
+  if (maxScore <= 1) {
+    return 1;
+  }
+
+  // Map 1..5 back into 1..maxScore for UI/API consumers.
+  const normalized = (clampedStored - 1) / 4;
+  const logical = Math.round(normalized * (maxScore - 1)) + 1;
+  return Math.min(maxScore, Math.max(1, logical));
+}
+
+function normalizeLogicalScore(
+  logicalScore: number,
+  scoringType: ScoringType,
+  maxScore: number
+): number {
+  if (scoringType === 'binary') {
+    return toBinaryLogicalScore(logicalScore) === 1 ? 100 : 0;
+  }
+
+  const clamped = Math.min(maxScore, Math.max(1, Math.round(logicalScore)));
+  return (clamped / maxScore) * 100;
+}
+
+function calculateOverallScore(
+  scores: Array<{ criteria_id: string; score: number }>,
+  criteria: QACriteria[]
+): number {
+  if (scores.length === 0) return 0;
+
+  const criteriaById = new Map(criteria.map((c) => [c.id, c]));
+  const normalized = scores.map((item) => {
+    const criteriaDef = criteriaById.get(item.criteria_id);
+    const scoringType = criteriaDef?.scoring_type || 'scale';
+    const maxScore = criteriaDef?.max_score || (scoringType === 'binary' ? 1 : 5);
+    return normalizeLogicalScore(item.score, scoringType, maxScore);
+  });
+
+  if (normalized.length === 0) return 0;
+  const sum = normalized.reduce((acc, value) => acc + value, 0);
+  return Math.round(sum / normalized.length);
+}
+
 // ============================================
 // AI QA Functions
 // ============================================
@@ -113,13 +235,26 @@ export async function runAIQAAnalysis(
   const criteria = await getQACriteria();
   
   // Call AI QA service
+  const aiCriteria = criteria.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description || '',
+    prompt: c.ai_prompt,
+    ai_prompt: c.ai_prompt,
+    scoring_type: c.scoring_type,
+    max_score: c.max_score,
+    weight: c.weight,
+    is_required: c.is_required,
+  }));
+
   const { result: aiResult, source } = await analyzeCallQuality({
     call_id: callId,
     transcripts,
     coaching_history: coachingHistory,
     duration_seconds: durationSeconds,
     total_turns: totalTurns,
-    scenario_type: scenarioType
+    scenario_type: scenarioType,
+    criteria: aiCriteria,
   });
   
   console.log(`[QAReview] AI QA completed (source: ${source}), score: ${aiResult.overall_score}`);
@@ -166,14 +301,25 @@ async function saveAIQAResult(
   // Create criteria scores
   const criteriaScores: AIQACriteriaScore[] = [];
   
-  for (const score of result.criteria_scores) {
+  for (const [index, score] of result.criteria_scores.entries()) {
     // Find matching criteria ID from database
     const matchingCriteria = dbCriteria.find(c => 
       c.name.toLowerCase() === score.criteria_name.toLowerCase() ||
       c.id === score.criteria_id
     );
     
-    const criteriaId = matchingCriteria?.id || uuidv4();
+    const fallbackCriteria = dbCriteria[index];
+    const criteriaId = matchingCriteria?.id || fallbackCriteria?.id;
+    if (!criteriaId) {
+      console.warn(`[QAReview] Skipping AI criteria score without matching criteria id: ${score.criteria_name}`);
+      continue;
+    }
+    const criteriaDef = matchingCriteria || fallbackCriteria;
+    const scoringType = criteriaDef?.scoring_type || 'scale';
+    const maxScore = criteriaDef?.max_score || 5;
+    const logicalScore = Number(score.score) || 0;
+    const storedScore = logicalToStoredScore(logicalScore, scoringType, maxScore);
+    const displayScore = storedToLogicalScore(storedScore, scoringType, maxScore);
     const scoreId = uuidv4();
     
     await db.execute({
@@ -186,7 +332,7 @@ async function saveAIQAResult(
         scoreId,
         id,
         criteriaId,
-        score.score,
+        storedScore,
         score.reasoning,
         score.evidence_quote,
         score.evidence_timestamp
@@ -197,17 +343,31 @@ async function saveAIQAResult(
       id: scoreId,
       criteria_id: criteriaId,
       criteria_name: score.criteria_name,
-      score: score.score,
+      score: displayScore,
       reasoning: score.reasoning,
       evidence_quote: score.evidence_quote,
       evidence_timestamp: score.evidence_timestamp
+    });
+  }
+
+  const computedOverallScore = criteriaScores.length > 0
+    ? calculateOverallScore(
+        criteriaScores.map((item) => ({ criteria_id: item.criteria_id, score: item.score })),
+        dbCriteria
+      )
+    : result.overall_score;
+
+  if (criteriaScores.length > 0 && computedOverallScore !== result.overall_score) {
+    await db.execute({
+      sql: 'UPDATE ai_qa_results SET overall_score = ? WHERE id = ?',
+      args: [computedOverallScore, id]
     });
   }
   
   return {
     id,
     call_id: callId,
-    overall_score: result.overall_score,
+    overall_score: computedOverallScore,
     summary_feedback: result.summary_feedback,
     status: 'pending_review',
     created_at: now,
@@ -234,7 +394,9 @@ export async function getAIQAResult(callId: string): Promise<AIQAResult | null> 
     sql: `
       SELECT 
         aqcs.*,
-        qc.name as criteria_name
+        qc.name as criteria_name,
+        qc.scoring_type as criteria_scoring_type,
+        qc.max_score as criteria_max_score
       FROM ai_qa_criteria_scores aqcs
       LEFT JOIN qa_criteria qc ON aqcs.criteria_id = qc.id
       WHERE aqcs.ai_qa_result_id = ?
@@ -243,15 +405,21 @@ export async function getAIQAResult(callId: string): Promise<AIQAResult | null> 
     args: [row.id]
   });
   
-  const criteriaScores: AIQACriteriaScore[] = scoresResult.rows.map(s => ({
-    id: s.id as string,
-    criteria_id: s.criteria_id as string,
-    criteria_name: (s.criteria_name || s.criteria_id) as string,
-    score: s.score as number,
-    reasoning: s.reasoning as string,
-    evidence_quote: s.evidence_quote as string,
-    evidence_timestamp: s.evidence_timestamp as number
-  }));
+  const criteriaScores: AIQACriteriaScore[] = scoresResult.rows.map(s => {
+    const scoringType = normalizeScoringType(s.criteria_scoring_type);
+    const maxScore = deriveMaxScore(s.criteria_scoring_type, scoringType, s.criteria_max_score);
+    const displayScore = storedToLogicalScore(Number(s.score), scoringType, maxScore);
+
+    return {
+      id: s.id as string,
+      criteria_id: s.criteria_id as string,
+      criteria_name: (s.criteria_name || s.criteria_id) as string,
+      score: displayScore,
+      reasoning: s.reasoning as string,
+      evidence_quote: s.evidence_quote as string,
+      evidence_timestamp: s.evidence_timestamp as number
+    };
+  });
   
   return {
     id: row.id as string,
@@ -276,21 +444,25 @@ export async function getQACriteria(): Promise<QACriteria[]> {
     sql: `
       SELECT * FROM qa_criteria 
       WHERE config_id = 'default'
+        AND COALESCE(is_active, 1) = 1
       ORDER BY sort_order ASC
     `
   });
   
-  return result.rows.map(row => ({
-    id: row.id as string,
-    name: row.name as string,
-    description: row.description as string,
-    ai_prompt: row.ai_prompt as string,
-    scoring_type: (row.scoring_type as ScoringType) || 'scale',
-    max_score: (row.max_score as number) || 5,
-    weight: (row.weight as number) || 0,
-    is_required: Boolean(row.is_required),
-    sort_order: row.sort_order as number
-  }));
+  return result.rows.map(row => {
+    const scoringType = normalizeScoringType(row.scoring_type);
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      description: (row.description as string) || '',
+      ai_prompt: (row.ai_prompt as string) || '',
+      scoring_type: scoringType,
+      max_score: deriveMaxScore(row.scoring_type, scoringType, row.max_score),
+      weight: sanitizeWeight(row.weight),
+      is_required: Boolean(row.is_required),
+      sort_order: Number(row.sort_order) || 0
+    };
+  });
 }
 
 /**
@@ -308,6 +480,19 @@ export async function saveQACriteria(data: {
   is_required: boolean;
   sort_order: number;
 }): Promise<void> {
+  const scoringType = normalizeScoringType(data.scoring_type);
+  const maxScore = deriveMaxScore(data.scoring_type, scoringType, data.max_score);
+  const weight = sanitizeWeight(data.weight);
+  const sortOrder = Math.max(0, Math.round(Number(data.sort_order) || 0));
+  const isRequired = Boolean(data.is_required);
+  const name = (data.name || '').trim();
+  const aiPrompt = (data.ai_prompt || '').trim();
+  const description = (data.description || '').trim();
+
+  if (!data.id || !name || !aiPrompt) {
+    throw new Error('id, name, and ai_prompt are required');
+  }
+
   // Check if criteria exists
   const existing = await db.execute({
     sql: 'SELECT id FROM qa_criteria WHERE id = ?',
@@ -316,50 +501,93 @@ export async function saveQACriteria(data: {
   
   if (existing.rows.length > 0) {
     // Update existing
-    await db.execute({
-      sql: `
-        UPDATE qa_criteria SET
-          name = ?,
-          description = ?,
-          ai_prompt = ?,
-          scoring_type = ?,
-          max_score = ?,
-          weight = ?,
-          is_required = ?,
-          sort_order = ?
-        WHERE id = ?
-      `,
-      args: [
-        data.name,
-        data.description,
-        data.ai_prompt,
-        data.scoring_type,
-        data.max_score,
-        data.weight,
-        data.is_required ? 1 : 0,
-        data.sort_order,
-        data.id
-      ]
-    });
+    const updateSql = `
+      UPDATE qa_criteria SET
+        name = ?,
+        description = ?,
+        ai_prompt = ?,
+        scoring_type = ?,
+        max_score = ?,
+        weight = ?,
+        is_required = ?,
+        is_active = 1,
+        sort_order = ?
+      WHERE id = ?
+    `;
+    try {
+      await db.execute({
+        sql: updateSql,
+        args: [
+          name,
+          description,
+          aiPrompt,
+          scoringType,
+          maxScore,
+          weight,
+          isRequired ? 1 : 0,
+          sortOrder,
+          data.id
+        ]
+      });
+    } catch (error) {
+      if (!isScoringTypeConstraintError(error)) throw error;
+
+      const legacyScoringType = toLegacyScoringType(scoringType, maxScore);
+      await db.execute({
+        sql: updateSql,
+        args: [
+          name,
+          description,
+          aiPrompt,
+          legacyScoringType,
+          maxScore,
+          weight,
+          isRequired ? 1 : 0,
+          sortOrder,
+          data.id
+        ]
+      });
+    }
   } else {
     // Insert new
-    await db.execute({
-      sql: `
-        INSERT INTO qa_criteria (id, config_id, name, description, ai_prompt, scoring_type, max_score, weight, is_required, sort_order)
-        VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        data.id,
-        data.name,
-        data.description,
-        data.ai_prompt,
-        data.scoring_type,
-        data.max_score,
-        data.weight,
-        data.is_required ? 1 : 0,
-        data.sort_order
-      ]
-    });
+    const insertSql = `
+      INSERT INTO qa_criteria (id, config_id, name, description, ai_prompt, scoring_type, max_score, weight, is_required, sort_order)
+      VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    try {
+      await db.execute({
+        sql: insertSql,
+        args: [
+          data.id,
+          name,
+          description,
+          aiPrompt,
+          scoringType,
+          maxScore,
+          weight,
+          isRequired ? 1 : 0,
+          sortOrder
+        ]
+      });
+    } catch (error) {
+      if (!isScoringTypeConstraintError(error)) throw error;
+
+      const legacyScoringType = toLegacyScoringType(scoringType, maxScore);
+      await db.execute({
+        sql: insertSql,
+        args: [
+          data.id,
+          name,
+          description,
+          aiPrompt,
+          legacyScoringType,
+          maxScore,
+          weight,
+          isRequired ? 1 : 0,
+          sortOrder
+        ]
+      });
+    }
   }
 }
 
@@ -367,8 +595,13 @@ export async function saveQACriteria(data: {
  * Delete QA criteria
  */
 export async function deleteQACriteria(id: string): Promise<void> {
+  if (!id) {
+    throw new Error('criteria id is required');
+  }
+
   await db.execute({
-    sql: 'DELETE FROM qa_criteria WHERE id = ?',
+    // Soft delete to preserve FK-linked historical QA scores.
+    sql: 'UPDATE qa_criteria SET is_active = 0 WHERE id = ?',
     args: [id]
   });
 }
@@ -398,6 +631,30 @@ export async function saveHumanQAReview(data: {
 }): Promise<HumanQAReview> {
   const id = uuidv4();
   const now = new Date().toISOString();
+
+  const criteria = await getQACriteria();
+  const criteriaById = new Map(criteria.map((c) => [c.id, c]));
+
+  const normalizedScores = data.criteria_scores.map((score) => {
+    const criteriaDef = criteriaById.get(score.criteria_id);
+    const scoringType = criteriaDef?.scoring_type || 'scale';
+    const maxScore = criteriaDef?.max_score || 5;
+    const logicalScore = Number(score.score) || 0;
+    const storedScore = logicalToStoredScore(logicalScore, scoringType, maxScore);
+
+    return {
+      ...score,
+      score: storedScore,
+    };
+  });
+
+  const computedOverallScore = calculateOverallScore(
+    data.criteria_scores.map((item) => ({
+      criteria_id: item.criteria_id,
+      score: Number(item.score) || 0,
+    })),
+    criteria
+  );
   
   // Check if review already exists
   const existingResult = await db.execute({
@@ -418,7 +675,7 @@ export async function saveHumanQAReview(data: {
           created_at = ?
         WHERE id = ?
       `,
-      args: [data.overall_score, data.general_feedback, data.status, now, existingId]
+      args: [computedOverallScore, data.general_feedback, data.status, now, existingId]
     });
     
     // Delete old criteria scores and comments
@@ -432,7 +689,7 @@ export async function saveHumanQAReview(data: {
     });
     
     // Insert new criteria scores
-    for (const score of data.criteria_scores) {
+    for (const score of normalizedScores) {
       await db.execute({
         sql: `
           INSERT INTO human_qa_criteria_scores (id, human_qa_review_id, criteria_id, score, comment)
@@ -472,11 +729,11 @@ export async function saveHumanQAReview(data: {
       INSERT INTO human_qa_reviews (id, call_id, reviewer_id, overall_score, general_feedback, status, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
-    args: [id, data.call_id, data.reviewer_id, data.overall_score, data.general_feedback, data.status, now]
+    args: [id, data.call_id, data.reviewer_id, computedOverallScore, data.general_feedback, data.status, now]
   });
   
   // Insert criteria scores
-  for (const score of data.criteria_scores) {
+  for (const score of normalizedScores) {
     await db.execute({
       sql: `
         INSERT INTO human_qa_criteria_scores (id, human_qa_review_id, criteria_id, score, comment)
@@ -535,7 +792,9 @@ export async function getHumanQAReview(reviewId: string): Promise<HumanQAReview 
     sql: `
       SELECT 
         hqcs.*,
-        qc.name as criteria_name
+        qc.name as criteria_name,
+        qc.scoring_type as criteria_scoring_type,
+        qc.max_score as criteria_max_score
       FROM human_qa_criteria_scores hqcs
       LEFT JOIN qa_criteria qc ON hqcs.criteria_id = qc.id
       WHERE hqcs.human_qa_review_id = ?
@@ -543,13 +802,19 @@ export async function getHumanQAReview(reviewId: string): Promise<HumanQAReview 
     args: [reviewId]
   });
   
-  const criteriaScores: HumanQACriteriaScore[] = scoresResult.rows.map(s => ({
-    id: s.id as string,
-    criteria_id: s.criteria_id as string,
-    criteria_name: (s.criteria_name || s.criteria_id) as string,
-    score: s.score as number,
-    comment: s.comment as string
-  }));
+  const criteriaScores: HumanQACriteriaScore[] = scoresResult.rows.map(s => {
+    const scoringType = normalizeScoringType(s.criteria_scoring_type);
+    const maxScore = deriveMaxScore(s.criteria_scoring_type, scoringType, s.criteria_max_score);
+    const displayScore = storedToLogicalScore(Number(s.score), scoringType, maxScore);
+
+    return {
+      id: s.id as string,
+      criteria_id: s.criteria_id as string,
+      criteria_name: (s.criteria_name || s.criteria_id) as string,
+      score: displayScore,
+      comment: (s.comment as string) || ''
+    };
+  });
   
   // Get comments
   const commentsResult = await db.execute({

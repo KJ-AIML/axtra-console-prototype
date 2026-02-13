@@ -12,9 +12,7 @@ import {
   GripVertical, 
   Save, 
   Loader2,
-  AlertCircle,
-  Settings,
-  CheckCircle2
+  Settings
 } from 'lucide-react';
 import { useQAStore, showSuccess, showError, type ScoringType } from '../stores';
 import Button from '../components/ui/Button';
@@ -89,6 +87,7 @@ const QACriteriaConfig: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCriteria, setNewCriteria] = useState<CriteriaFormData>(DEFAULT_CRITERIA);
   const [selectedExample, setSelectedExample] = useState<number | null>(null);
+  const [originalCriteriaIds, setOriginalCriteriaIds] = useState<string[]>([]);
 
   // Load criteria on mount
   useEffect(() => {
@@ -103,19 +102,19 @@ const QACriteriaConfig: React.FC = () => {
 
   // Sync form data with store data
   useEffect(() => {
-    if (criteria.length > 0) {
-      setFormData(criteria.map((c, index) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description || '',
-        ai_prompt: c.ai_prompt,
-        scoring_type: c.scoring_type || 'scale',
-        max_score: c.max_score || 5,
-        weight: c.weight || 0,
-        is_required: c.is_required || false,
-        sort_order: c.sort_order || index,
-      })));
-    }
+    const normalized = criteria.map((c, index) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description || '',
+      ai_prompt: c.ai_prompt,
+      scoring_type: c.scoring_type === 'binary' ? 'binary' : 'scale',
+      max_score: c.max_score || 5,
+      weight: c.weight || 0,
+      is_required: c.is_required || false,
+      sort_order: c.sort_order || index,
+    }));
+    setFormData(normalized);
+    setOriginalCriteriaIds(normalized.map((c) => c.id));
   }, [criteria]);
 
   const handleUpdateCriteria = (index: number, field: keyof CriteriaFormData, value: string | number) => {
@@ -161,14 +160,12 @@ const QACriteriaConfig: React.FC = () => {
     setIsSaving(true);
     
     try {
-      // Validate - only check weights if there are weighted criteria
-      const weightedCriteria = formData.filter(c => c.weight > 0);
-      const totalWeight = weightedCriteria.reduce((sum, c) => sum + c.weight, 0);
-      
-      if (weightedCriteria.length > 0 && totalWeight !== 100) {
-        showError(`Weighted criteria total must equal 100%. Current: ${totalWeight}%`);
-        setIsSaving(false);
-        return;
+      const currentIds = new Set(formData.map((c) => c.id));
+      const removedIds = originalCriteriaIds.filter((id) => !currentIds.has(id));
+
+      // Delete removed criteria first
+      for (const removedId of removedIds) {
+        await apiClient.delete(`/qa/criteria/${removedId}`);
       }
 
       // Save each criteria
@@ -178,6 +175,7 @@ const QACriteriaConfig: React.FC = () => {
 
       showSuccess('QA criteria saved successfully');
       await fetchCriteria();
+      setOriginalCriteriaIds(formData.map((c) => c.id));
     } catch (error: any) {
       showError(error.message || 'Failed to save criteria');
     } finally {
@@ -215,8 +213,6 @@ const QACriteriaConfig: React.FC = () => {
     setSelectedExample(index);
   };
 
-  const totalWeight = formData.reduce((sum, c) => sum + c.weight, 0);
-
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -245,27 +241,6 @@ const QACriteriaConfig: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3">
-          {(() => {
-            const weightedCriteria = formData.filter(c => c.weight > 0);
-            const weightedTotal = weightedCriteria.reduce((sum, c) => sum + c.weight, 0);
-            const hasWeighted = weightedCriteria.length > 0;
-            if (!hasWeighted) {
-              return (
-                <div className="px-4 py-2 rounded-lg font-medium bg-gray-50 text-gray-600">
-                  No Weighted Criteria
-                </div>
-              );
-            }
-            return (
-              <div className={cn(
-                'px-4 py-2 rounded-lg font-medium',
-                weightedTotal === 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-              )}>
-                Weighted Total: {weightedTotal}%
-                {weightedTotal !== 100 && ' (Must be 100%)'}
-              </div>
-            );
-          })()}
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? (
               <>
@@ -292,8 +267,8 @@ const QACriteriaConfig: React.FC = () => {
               These criteria are used by both the AI QA Agent and human reviewers.
               The AI Prompt guides the AI on how to evaluate each criteria.
               <strong>Scoring Type:</strong> Use &quot;Point Scale&quot; for subjective ratings (set any max: 5, 10, 100, etc.) or &quot;Yes/No&quot; for binary checks.
-              <strong>Weight:</strong> Set to 0 for criteria that don&apos;t affect the overall score (informational only). Weighted criteria must total 100%.
-              <strong>Required:</strong> Mark criteria that must be passed for the call to be considered successful.
+              <strong>Overall Scoring:</strong> Calculated automatically using equal weight across all configured criteria.
+              <strong>Required:</strong> Mark criteria that must be explicitly satisfied for policy/compliance checks.
             </p>
           </div>
         </div>
@@ -374,21 +349,6 @@ const QACriteriaConfig: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Weight */}
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">
-                      Weight (%)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={criteria.weight}
-                      onChange={(e) => handleUpdateCriteria(index, 'weight', parseInt(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
                   {/* Required */}
                   <div className="col-span-1">
                     <label className="block text-xs font-medium text-gray-500 mb-1">
@@ -403,7 +363,7 @@ const QACriteriaConfig: React.FC = () => {
                   </div>
 
                   {/* Description */}
-                  <div className={criteria.scoring_type === 'scale' ? "col-span-3" : "col-span-4"}>
+                  <div className={criteria.scoring_type === 'scale' ? "col-span-5" : "col-span-6"}>
                     <label className="block text-xs font-medium text-gray-500 mb-1">
                       Description
                     </label>
@@ -530,19 +490,6 @@ const QACriteriaConfig: React.FC = () => {
                   />
                 </div>
               )}
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Weight (%)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={newCriteria.weight}
-                  onChange={(e) => setNewCriteria({ ...newCriteria, weight: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
               <div className="col-span-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Required
@@ -601,23 +548,6 @@ const QACriteriaConfig: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Weight Warning */}
-      {(() => {
-        const weightedTotal = formData.filter(c => c.weight > 0).reduce((sum, c) => sum + c.weight, 0);
-        const hasWeighted = formData.some(c => c.weight > 0);
-        if (!hasWeighted) return null;
-        if (weightedTotal === 100) return null;
-        return (
-          <div className="mt-6 flex items-center gap-2 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-700">
-            <AlertCircle className="w-5 h-5" />
-            <span>
-              Weighted criteria total is {weightedTotal}%, but must equal 100%.
-              Please adjust weights or set unused criteria to 0.
-            </span>
-          </div>
-        );
-      })()}
     </div>
   );
 };
