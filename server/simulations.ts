@@ -445,3 +445,124 @@ export async function seedScenarios(): Promise<void> {
 
   console.log(`✅ ${DEFAULT_SCENARIOS.length} scenarios seeded`);
 }
+
+// ============================================
+// CRUD Operations
+// ============================================
+
+/**
+ * Create a new scenario
+ */
+export async function createScenario(data: Partial<Scenario>): Promise<Scenario> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      INSERT INTO scenarios (
+        id, title, description, difficulty, duration, type, category,
+        persona, is_recommended, rating, completions, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      id,
+      data.title,
+      data.description || null,
+      data.difficulty || 'Medium',
+      data.duration || '10 mins',
+      data.type || 'Voice Simulation',
+      data.category || 'General',
+      data.persona || 'Customer',
+      data.isRecommended ? 1 : 0,
+      data.rating || 4.5,
+      0, // completions start at 0
+      data.sortOrder || 0,
+      now,
+      now,
+    ],
+  });
+
+  return {
+    id,
+    title: data.title || 'Untitled Scenario',
+    description: data.description || '',
+    difficulty: data.difficulty || 'Medium',
+    duration: data.duration || '10 mins',
+    type: data.type || 'Voice Simulation',
+    category: data.category || 'General',
+    persona: data.persona || 'Customer',
+    isRecommended: data.isRecommended ?? false,
+    rating: data.rating || 4.5,
+    completions: 0,
+    sortOrder: data.sortOrder || 0,
+    createdAt: now,
+  };
+}
+
+/**
+ * Update an existing scenario
+ */
+export async function updateScenario(id: string, data: Partial<Scenario>): Promise<void> {
+  const now = new Date().toISOString();
+
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (data.title !== undefined) {
+    fields.push('title = ?');
+    values.push(data.title);
+  }
+  if (data.description !== undefined) {
+    fields.push('description = ?');
+    values.push(data.description);
+  }
+  if (data.difficulty !== undefined) {
+    fields.push('difficulty = ?');
+    values.push(data.difficulty);
+  }
+  if (data.duration !== undefined) {
+    fields.push('duration = ?');
+    values.push(data.duration);
+  }
+  if (data.type !== undefined) {
+    fields.push('type = ?');
+    values.push(data.type);
+  }
+  if (data.category !== undefined) {
+    fields.push('category = ?');
+    values.push(data.category);
+  }
+  if (data.persona !== undefined) {
+    fields.push('persona = ?');
+    values.push(data.persona);
+  }
+  if (data.isRecommended !== undefined) {
+    fields.push('is_recommended = ?');
+    values.push(data.isRecommended ? 1 : 0);
+  }
+  if (data.sortOrder !== undefined) {
+    fields.push('sort_order = ?');
+    values.push(data.sortOrder);
+  }
+
+  fields.push('updated_at = ?');
+  values.push(now);
+  values.push(id);
+
+  if (fields.length > 1) {
+    await db.execute({
+      sql: `UPDATE scenarios SET ${fields.join(', ')} WHERE id = ?`,
+      args: values,
+    });
+  }
+}
+
+/**
+ * Delete a scenario
+ */
+export async function deleteScenario(id: string): Promise<void> {
+  await db.execute({
+    sql: 'DELETE FROM scenarios WHERE id = ?',
+    args: [id],
+  });
+}

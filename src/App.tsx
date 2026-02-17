@@ -9,6 +9,7 @@ import { ToastContainer } from './components/ui';
 import {
   Login,
   Scenarios,
+  ScenarioBuilder,
   Personas,
   PersonaBuilder,
   Simulations,
@@ -17,7 +18,6 @@ import {
   ActiveCalls,
   Recordings,
   RecordingDetail,
-  QAScoring,
   QAReviewQueue,
   QAReviewDetail,
   QACriteriaConfig,
@@ -99,6 +99,8 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/scenarios" element={<Scenarios />} />
+            <Route path="/scenarios/new" element={<ScenarioBuilder />} />
+            <Route path="/scenarios/:scenarioId/edit" element={<ScenarioBuilder />} />
             <Route path="/personas" element={<Personas />} />
             <Route path="/personas/new" element={<PersonaBuilder />} />
             <Route path="/personas/:personaId/edit" element={<PersonaBuilder />} />

@@ -3,6 +3,7 @@
 export { default as Login } from './Login';
 export { default as Dashboard } from './Dashboard';
 export { default as Scenarios } from './Scenarios';
+export { default as ScenarioBuilder } from './ScenarioBuilder';
 export { default as Personas } from './Personas';
 export { default as PersonaBuilder } from './PersonaBuilder';
 export { default as Simulations } from './Simulations';
@@ -11,7 +12,6 @@ export { default as Copilot } from './Copilot';
 export { default as ActiveCalls } from './ActiveCalls';
 export { default as Recordings } from './Recordings';
 export { default as RecordingDetail } from './RecordingDetail';
-export { default as QAScoring } from './QAScoring';
 export { default as QAReviewQueue } from './QAReviewQueue';
 export { default as QAReviewDetail } from './QAReviewDetail';
 export { default as QACriteriaConfig } from './QACriteriaConfig';

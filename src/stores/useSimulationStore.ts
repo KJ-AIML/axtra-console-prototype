@@ -38,6 +38,9 @@ interface SimulationState {
   fetchStats: () => Promise<void>;
   startSimulation: (scenarioId: string) => Promise<void>;
   completeSimulation: (scenarioId: string, score: number, feedback?: string) => Promise<void>;
+  createScenario: (data: Partial<Scenario>) => Promise<Scenario | null>;
+  updateScenario: (id: string, data: Partial<Scenario>) => Promise<boolean>;
+  deleteScenario: (id: string) => Promise<boolean>;
   clearError: () => void;
 }
 
@@ -124,6 +127,68 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     } catch (error) {
       console.error('Failed to complete simulation:', error);
       throw error;
+    }
+  },
+
+  createScenario: async (data: Partial<Scenario>) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      const response = await apiClient.post<{
+        success: boolean;
+        data: { scenario: Scenario };
+      }>('/scenarios', data);
+      
+      const newScenario = response.data.scenario;
+      set({ 
+        scenarios: [...get().scenarios, newScenario],
+        isLoading: false,
+        error: null,
+      });
+      
+      return newScenario;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create scenario';
+      set({ isLoading: false, error: message });
+      return null;
+    }
+  },
+
+  updateScenario: async (id: string, data: Partial<Scenario>) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      await apiClient.put(`/scenarios/${id}`, data);
+      
+      // Update local state
+      const scenarios = get().scenarios.map(s => 
+        s.id === id ? { ...s, ...data } : s
+      );
+      set({ scenarios, isLoading: false, error: null });
+      
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update scenario';
+      set({ isLoading: false, error: message });
+      return false;
+    }
+  },
+
+  deleteScenario: async (id: string) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      await apiClient.delete(`/scenarios/${id}`);
+      
+      // Update local state
+      const scenarios = get().scenarios.filter(s => s.id !== id);
+      set({ scenarios, isLoading: false, error: null });
+      
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete scenario';
+      set({ isLoading: false, error: message });
+      return false;
     }
   },
 

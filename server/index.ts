@@ -35,6 +35,10 @@ import {
   getUserSimulationStats,
   getRecommendedScenarios,
   seedScenarios,
+  createScenario,
+  updateScenario,
+  deleteScenario,
+  type Scenario,
 } from './simulations';
 import {
   generateLiveKitToken,
@@ -486,6 +490,88 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       
       const scenarios = await getRecommendedScenarios(user.id);
       sendJson(res, 200, { success: true, data: { scenarios } });
+      return;
+    }
+
+    // ============================================
+    // Scenario CRUD Operations
+    // ============================================
+
+    // Create scenario
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'scenarios') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req) as Partial<Scenario>;
+        const scenario = await createScenario(body);
+        sendJson(res, 201, { success: true, data: { scenario } });
+      } catch (error) {
+        console.error('Create scenario error:', error);
+        sendJson(res, 500, { error: 'Failed to create scenario' });
+      }
+      return;
+    }
+
+    // Update scenario
+    if (method === 'PUT' && segments.length === 2 && segments[0] === 'scenarios') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const scenarioId = segments[1];
+      
+      try {
+        const body = await parseBody(req) as Partial<Scenario>;
+        await updateScenario(scenarioId, body);
+        sendJson(res, 200, { success: true, message: 'Scenario updated' });
+      } catch (error) {
+        console.error('Update scenario error:', error);
+        sendJson(res, 500, { error: 'Failed to update scenario' });
+      }
+      return;
+    }
+
+    // Delete scenario
+    if (method === 'DELETE' && segments.length === 2 && segments[0] === 'scenarios') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const scenarioId = segments[1];
+      
+      try {
+        await deleteScenario(scenarioId);
+        sendJson(res, 200, { success: true, message: 'Scenario deleted' });
+      } catch (error) {
+        console.error('Delete scenario error:', error);
+        sendJson(res, 500, { error: 'Failed to delete scenario' });
+      }
       return;
     }
 

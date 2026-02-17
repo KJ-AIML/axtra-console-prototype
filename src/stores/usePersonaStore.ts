@@ -156,12 +156,27 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         data: { personas: Persona[] };
       }>('/personas');
       
-      // Add computed display fields
-      const personasWithStats = response.data.personas.map(persona => ({
-        ...persona,
-        satisfaction: generateSatisfaction(persona.behaviorProfile?.initialMood),
-        totalCalls: Math.floor(Math.random() * 30) + 5
-      }));
+      // Calculate stats from real call history (show 0 if no data)
+      const personasWithStats = response.data.personas.map(persona => {
+        const callHistory = persona.callHistory || [];
+        const totalCalls = callHistory.length;
+        
+        // Calculate satisfaction from call outcomes
+        let satisfaction = 0;
+        if (totalCalls > 0) {
+          const positiveCalls = callHistory.filter(c => c.sentiment === 'positive').length;
+          const neutralCalls = callHistory.filter(c => c.sentiment === 'neutral').length;
+          // Weighted: positive=5, neutral=3, negative=1
+          const score = ((positiveCalls * 5) + (neutralCalls * 3) + ((totalCalls - positiveCalls - neutralCalls) * 1)) / totalCalls;
+          satisfaction = Math.min(5, Math.max(1, score)); // Clamp between 1-5
+        }
+        
+        return {
+          ...persona,
+          satisfaction: totalCalls > 0 ? satisfaction : 0,
+          totalCalls
+        };
+      });
       
       set({ 
         personas: personasWithStats,
@@ -186,11 +201,24 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       
       const persona = response.data.persona;
       
-      // Add computed display fields (callHistory comes from API)
+      // Calculate stats from real call history (show 0 if no data)
+      const callHistory = persona.callHistory || [];
+      const totalCalls = callHistory.length;
+      
+      // Calculate satisfaction from call outcomes
+      let satisfaction = 0;
+      if (totalCalls > 0) {
+        const positiveCalls = callHistory.filter(c => c.sentiment === 'positive').length;
+        const neutralCalls = callHistory.filter(c => c.sentiment === 'neutral').length;
+        // Weighted: positive=5, neutral=3, negative=1
+        const score = ((positiveCalls * 5) + (neutralCalls * 3) + ((totalCalls - positiveCalls - neutralCalls) * 1)) / totalCalls;
+        satisfaction = Math.min(5, Math.max(1, score));
+      }
+      
       const personaWithExtras = {
         ...persona,
-        satisfaction: generateSatisfaction(persona.behaviorProfile?.initialMood),
-        totalCalls: Math.floor(Math.random() * 30) + 5
+        satisfaction: totalCalls > 0 ? satisfaction : 0,
+        totalCalls
       };
       
       set({ 
@@ -346,25 +374,5 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
     }
   }
 }));
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-function generateSatisfaction(mood?: string): number {
-  switch (mood) {
-    case 'happy':
-      return 4.5 + Math.random() * 0.5;
-    case 'calm':
-      return 4.0 + Math.random() * 0.8;
-    case 'frustrated':
-      return 3.0 + Math.random() * 1.0;
-    case 'angry':
-    case 'panicked':
-      return 2.0 + Math.random() * 1.5;
-    default:
-      return 3.5 + Math.random() * 1.0;
-  }
-}
 
 export default usePersonaStore;
