@@ -27,6 +27,11 @@ export type {
   SimulationStats,
 } from './useSimulationStore';
 export { useQAStore } from './useQAStore';
+export { usePersonaStore } from './usePersonaStore';
+export type {
+  Persona,
+  Simulation as PersonaSimulation,
+} from './usePersonaStore';
 export type {
   QACriteria,
   AIQAResult,
