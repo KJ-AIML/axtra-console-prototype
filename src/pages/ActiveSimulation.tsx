@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../utils/classnames';
 import { apiClient } from '../lib/api-client';
 import { useLiveKitStore, showError, showSuccess } from '../stores';
+import { usePersonaStore, type Persona, type PersonaContextOverride } from '../stores';
 import {
   LiveKitCallControls,
   LiveKitTranscript,
@@ -25,70 +26,35 @@ import {
 } from 'lucide-react';
 
 // ============================================
-// MOCK DATA (for customer panel only)
-// ============================================
-
-const MOCK_CUSTOMER = {
-  id: 'CUST-2847',
-  name: 'Sarah Thompson',
-  avatar: null,
-  tier: 'Gold',
-  tierColor: 'amber',
-  phone: '+1 (555) 234-5678',
-  email: 'sarah.thompson@email.com',
-  accountSince: '2019-03-15',
-  contract: {
-    plan: 'Premium Plus',
-    monthlyValue: 149.99,
-    renewalDate: '2025-03-15',
-    status: 'Active',
-  },
-  preferences: {
-    communication: 'Phone preferred',
-    language: 'English',
-    timezone: 'EST (UTC-5)',
-  },
-  satisfaction: 4.2,
-  totalCalls: 23,
-  avgCallDuration: '8m 32s',
-};
-
-const MOCK_CALL_HISTORY = [
-  {
-    id: 'CALL-4521',
-    date: '2024-01-28',
-    duration: '12m 45s',
-    type: 'Billing Inquiry',
-    outcome: 'Resolved',
-    sentiment: 'neutral',
-    summary: 'Customer questioned charges on invoice. Provided breakdown and applied loyalty discount.',
-  },
-  {
-    id: 'CALL-4398',
-    date: '2024-01-15',
-    duration: '18m 22s',
-    type: 'Technical Support',
-    outcome: 'Escalated',
-    sentiment: 'negative',
-    summary: 'Internet connectivity issues. Tried troubleshooting but required technician visit.',
-  },
-  {
-    id: 'CALL-4211',
-    date: '2024-01-02',
-    duration: '6m 10s',
-    type: 'Service Upgrade',
-    outcome: 'Resolved',
-    sentiment: 'positive',
-    summary: 'Customer upgraded to Premium Plus plan. Successfully processed upgrade.',
-  },
-];
-
-// ============================================
 // COMPONENT: Customer Data Panel (Left)
 // ============================================
 
-const CustomerDataPanel = memo(() => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
+interface CustomerDataPanelProps {
+  persona: Persona;
+  contextOverride?: PersonaContextOverride | null;
+}
+
+const CustomerDataPanel = memo<CustomerDataPanelProps>(({ persona, contextOverride }) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'context'>('overview');
+
+  const getTierColor = (tier: string) => {
+    const colors: Record<string, string> = {
+      'Gold': 'bg-amber-100 text-amber-700',
+      'Silver': 'bg-gray-100 text-gray-700',
+      'Bronze': 'bg-orange-100 text-orange-700',
+      'Platinum': 'bg-indigo-100 text-indigo-700',
+    };
+    return colors[tier] || 'bg-gray-100 text-gray-700';
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      'Active': 'bg-emerald-100 text-emerald-700',
+      'Suspended': 'bg-amber-100 text-amber-700',
+      'Cancelled': 'bg-rose-100 text-rose-700',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-700';
+  };
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">
@@ -98,16 +64,16 @@ const CustomerDataPanel = memo(() => {
           <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
             <User size={24} className="text-indigo-600" />
           </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">{MOCK_CUSTOMER.name}</h3>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-900 truncate">{persona.name}</h3>
             <div className="flex items-center gap-2">
               <span className={cn(
                 'px-2 py-0.5 text-[10px] font-bold uppercase rounded-full',
-                'bg-amber-100 text-amber-700'
+                getTierColor(persona.tierColor)
               )}>
-                {MOCK_CUSTOMER.tier} Tier
+                {persona.tier} Tier
               </span>
-              <span className="text-xs text-gray-500">{MOCK_CUSTOMER.id}</span>
+              <span className="text-xs text-gray-500">{persona.id}</span>
             </div>
           </div>
         </div>
@@ -130,7 +96,16 @@ const CustomerDataPanel = memo(() => {
               activeTab === 'history' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             )}
           >
-            Call History
+            History
+          </button>
+          <button
+            onClick={() => setActiveTab('context')}
+            className={cn(
+              'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
+              activeTab === 'context' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            )}
+          >
+            Context
           </button>
         </div>
       </div>
@@ -145,11 +120,15 @@ const CustomerDataPanel = memo(() => {
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-400">📞</span>
-                  <span className="text-gray-700">{MOCK_CUSTOMER.phone}</span>
+                  <span className="text-gray-700">{persona.phone}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-400">✉️</span>
-                  <span className="text-gray-700">{MOCK_CUSTOMER.email}</span>
+                  <span className="text-gray-700">{persona.email}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-400">💬</span>
+                  <span className="text-gray-700">{persona.behaviorProfile?.communicationStyle || 'Phone preferred'}</span>
                 </div>
               </div>
             </div>
@@ -160,20 +139,23 @@ const CustomerDataPanel = memo(() => {
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Plan</span>
-                  <span className="font-medium text-gray-900">{MOCK_CUSTOMER.contract.plan}</span>
+                  <span className="font-medium text-gray-900">{persona.contractInfo?.plan || 'Standard'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Monthly</span>
-                  <span className="font-medium text-gray-900">${MOCK_CUSTOMER.contract.monthlyValue}</span>
+                  <span className="font-medium text-gray-900">${persona.contractInfo?.monthlyValue || 0}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Renewal</span>
-                  <span className="font-medium text-gray-900">{MOCK_CUSTOMER.contract.renewalDate}</span>
+                  <span className="font-medium text-gray-900">{persona.contractInfo?.renewalDate || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Status</span>
-                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full">
-                    {MOCK_CUSTOMER.contract.status}
+                  <span className={cn(
+                    'px-2 py-0.5 text-[10px] font-bold rounded-full',
+                    getStatusColor(persona.contractInfo?.status || 'Active')
+                  )}>
+                    {persona.contractInfo?.status || 'Active'}
                   </span>
                 </div>
               </div>
@@ -184,11 +166,11 @@ const CustomerDataPanel = memo(() => {
               <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Account Stats</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-indigo-50 rounded-lg p-3">
-                  <div className="text-lg font-bold text-indigo-700">{MOCK_CUSTOMER.totalCalls}</div>
+                  <div className="text-lg font-bold text-indigo-700">{persona.totalCalls}</div>
                   <div className="text-[10px] text-indigo-600">Total Calls</div>
                 </div>
                 <div className="bg-indigo-50 rounded-lg p-3">
-                  <div className="text-lg font-bold text-indigo-700">{MOCK_CUSTOMER.satisfaction}</div>
+                  <div className="text-lg font-bold text-indigo-700">{persona.satisfaction}</div>
                   <div className="text-[10px] text-indigo-600">CSAT Score</div>
                 </div>
               </div>
@@ -197,12 +179,17 @@ const CustomerDataPanel = memo(() => {
             {/* Account Since */}
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <Calendar size={14} />
-              <span>Customer since {MOCK_CUSTOMER.accountSince}</span>
+              <span>Customer since {persona.accountSince}</span>
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'history' ? (
           <div className="space-y-3">
-            {MOCK_CALL_HISTORY.map((call) => (
+            {(persona.callHistory || []).length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No call history available</p>
+              </div>
+            ) : (
+              (persona.callHistory || []).map((call) => (
               <div key={call.id} className="border border-gray-200 rounded-lg p-3 hover:border-indigo-200 transition-colors">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-gray-500">{call.date}</span>
@@ -232,7 +219,82 @@ const CustomerDataPanel = memo(() => {
                   </span>
                 </div>
               </div>
-            ))}
+            ))
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Current Issue Context */}
+            <div>
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Current Issue</h4>
+              <div className="bg-rose-50 border border-rose-100 rounded-lg p-3">
+                <div className="text-sm font-medium text-rose-900 mb-1">{contextOverride?.specificIssue || 'Support inquiry'}</div>
+                <div className="text-xs text-rose-700">Customer requires assistance with their inquiry</div>
+              </div>
+            </div>
+
+            {/* Expected Outcome */}
+            <div>
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Expected Outcome</h4>
+              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                <div className="text-xs text-emerald-800">{contextOverride?.expectedOutcome || 'Resolution of customer inquiry'}</div>
+              </div>
+            </div>
+
+            {/* Previous Attempts */}
+            {(contextOverride?.previousAttempts || 0) > 0 && (
+              <div>
+                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Previous Attempts</h4>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                  <div className="text-xs text-amber-800">
+                    Customer has contacted support {contextOverride?.previousAttempts} time{(contextOverride?.previousAttempts || 0) > 1 ? 's' : ''} about this issue
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI Behavior */}
+            <div>
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">AI Behavior</h4>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Initial Mood</span>
+                  <span className="font-medium text-gray-900 capitalize">{contextOverride?.initialMood || persona.behaviorProfile?.initialMood || 'neutral'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Patience Level</span>
+                  <span className="font-medium text-gray-900 capitalize">{persona.behaviorProfile?.patienceLevel || 'medium'}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Cooperation</span>
+                  <span className="font-medium text-gray-900 capitalize">{persona.behaviorProfile?.cooperationLevel || 'medium'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Escalation Triggers */}
+            <div>
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Escalation Triggers</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {(persona.behaviorProfile?.escalationTriggers || []).map((trigger, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-rose-100 text-rose-700 text-xs rounded-full">
+                    {trigger}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* De-escalation Triggers */}
+            <div>
+              <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">De-escalation Triggers</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {(persona.behaviorProfile?.deescalationTriggers || []).map((trigger, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-full">
+                    {trigger}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -606,8 +668,11 @@ interface ActiveSimulationProps {
 const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
   const { scenarioId } = useParams<{ scenarioId: string }>();
   const navigate = useNavigate();
+  const { fetchPrimaryPersonaForScenario } = usePersonaStore();
   
   const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [persona, setPersona] = useState<Persona | null>(null);
+  const [contextOverride, setContextOverride] = useState<PersonaContextOverride | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -624,7 +689,15 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
           data: { scenario: Scenario };
         }>(`/scenarios/${scenarioId}`);
         
-        setScenario(response.data.scenario);
+        const scenarioData = response.data.scenario;
+        setScenario(scenarioData);
+        
+        // Get persona data for this scenario from API
+        const personaData = await fetchPrimaryPersonaForScenario(scenarioId);
+        if (personaData) {
+          setPersona(personaData);
+          setContextOverride(personaData.contextOverride || null);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load scenario';
         setError(message);
@@ -634,7 +707,7 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
     };
     
     fetchScenario();
-  }, [scenarioId]);
+  }, [scenarioId, fetchPrimaryPersonaForScenario]);
 
   if (isLoading) {
     return (
@@ -707,7 +780,7 @@ const ActiveSimulation: React.FC<ActiveSimulationProps> = ({ className }) => {
       <div className="flex-1 flex overflow-hidden">
         {/* Section 1: Customer Data (Left Panel - 280px) */}
         <div className="w-[280px] shrink-0 border-r border-gray-200">
-          <CustomerDataPanel />
+          {persona && <CustomerDataPanel persona={persona} contextOverride={contextOverride} />}
         </div>
 
         {/* Section 2: Live Call Panel (Center Panel - Flexible) */}

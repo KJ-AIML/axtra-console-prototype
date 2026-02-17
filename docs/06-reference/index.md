@@ -8,6 +8,8 @@ Quick reference materials for Axtra Console.
 
 | Document | Description |
 |----------|-------------|
+| [Changelog](./CHANGELOG.md) | All version changes and updates |
+| [Version](./VERSION.md) | Current version and release info |
 | [Troubleshooting](./troubleshooting.md) | Common issues |
 | [Glossary](./glossary.md) | Terms and definitions |
 

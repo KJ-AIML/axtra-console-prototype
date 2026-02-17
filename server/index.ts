@@ -79,6 +79,19 @@ import {
   getCompleteQAData,
   getReviewedCalls,
 } from './qa-review';
+import {
+  initializePersonaTables,
+  getAllPersonas,
+  getPersonaById,
+  getPersonaWithScenarios,
+  getPersonasForScenario,
+  getPrimaryPersonaForScenario,
+  createPersona,
+  updatePersona,
+  deletePersona,
+  assignPersonaToScenario,
+  removePersonaFromScenario,
+} from './personas';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -1466,6 +1479,263 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     // ============================================
+    // PERSONA ROUTES
+    // ============================================
+    
+    // Get all personas
+    if (method === 'GET' && segments.length === 1 && segments[0] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const personas = await getAllPersonas();
+        sendJson(res, 200, { success: true, data: { personas } });
+      } catch (error) {
+        console.error('Get personas error:', error);
+        sendJson(res, 500, { error: 'Failed to get personas' });
+      }
+      return;
+    }
+    
+    // Get persona by ID
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const personaId = segments[1];
+      
+      try {
+        const persona = await getPersonaWithScenarios(personaId);
+        
+        if (!persona) {
+          sendJson(res, 404, { error: 'Persona not found' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, data: { persona } });
+      } catch (error) {
+        console.error('Get persona error:', error);
+        sendJson(res, 500, { error: 'Failed to get persona' });
+      }
+      return;
+    }
+    
+    // Get personas for a scenario
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'scenarios' && segments[2] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const scenarioId = segments[1];
+      
+      try {
+        const personas = await getPersonasForScenario(scenarioId);
+        sendJson(res, 200, { success: true, data: { personas } });
+      } catch (error) {
+        console.error('Get scenario personas error:', error);
+        sendJson(res, 500, { error: 'Failed to get personas' });
+      }
+      return;
+    }
+    
+    // Get primary persona for a scenario
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'scenarios' && segments[2] === 'primary-persona') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const scenarioId = segments[1];
+      
+      try {
+        const persona = await getPrimaryPersonaForScenario(scenarioId);
+        
+        if (!persona) {
+          sendJson(res, 404, { error: 'No persona assigned to this scenario' });
+          return;
+        }
+        
+        sendJson(res, 200, { success: true, data: { persona } });
+      } catch (error) {
+        console.error('Get primary persona error:', error);
+        sendJson(res, 500, { error: 'Failed to get primary persona' });
+      }
+      return;
+    }
+    
+    // Create persona
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      
+      try {
+        const persona = await createPersona({ ...body, createdBy: user.id });
+        sendJson(res, 201, { success: true, data: { persona } });
+      } catch (error) {
+        console.error('Create persona error:', error);
+        sendJson(res, 500, { error: 'Failed to create persona' });
+      }
+      return;
+    }
+    
+    // Update persona
+    if (method === 'PUT' && segments.length === 2 && segments[0] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const personaId = segments[1];
+      const body = await parseBody(req);
+      
+      try {
+        await updatePersona(personaId, body);
+        sendJson(res, 200, { success: true, message: 'Persona updated' });
+      } catch (error) {
+        console.error('Update persona error:', error);
+        sendJson(res, 500, { error: 'Failed to update persona' });
+      }
+      return;
+    }
+    
+    // Delete persona
+    if (method === 'DELETE' && segments.length === 2 && segments[0] === 'personas') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const personaId = segments[1];
+      
+      try {
+        await deletePersona(personaId);
+        sendJson(res, 200, { success: true, message: 'Persona deleted' });
+      } catch (error) {
+        console.error('Delete persona error:', error);
+        sendJson(res, 500, { error: 'Failed to delete persona' });
+      }
+      return;
+    }
+    
+    // Assign persona to scenario
+    if (method === 'POST' && segments.length === 4 && segments[0] === 'personas' && segments[2] === 'scenarios') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const personaId = segments[1];
+      const scenarioId = segments[3];
+      const body = await parseBody(req);
+      
+      try {
+        await assignPersonaToScenario(
+          personaId, 
+          scenarioId, 
+          body.contextOverride, 
+          body.displayOrder || 0
+        );
+        sendJson(res, 200, { success: true, message: 'Persona assigned to scenario' });
+      } catch (error) {
+        console.error('Assign persona error:', error);
+        sendJson(res, 500, { error: 'Failed to assign persona' });
+      }
+      return;
+    }
+    
+    // Remove persona from scenario
+    if (method === 'DELETE' && segments.length === 4 && segments[0] === 'personas' && segments[2] === 'scenarios') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const personaId = segments[1];
+      const scenarioId = segments[3];
+      
+      try {
+        await removePersonaFromScenario(personaId, scenarioId);
+        sendJson(res, 200, { success: true, message: 'Persona removed from scenario' });
+      } catch (error) {
+        console.error('Remove persona error:', error);
+        sendJson(res, 500, { error: 'Failed to remove persona' });
+      }
+      return;
+    }
+
+    // ============================================
     // Demo/Seed endpoints (for development/testing)
     // ============================================
     
@@ -1550,6 +1820,7 @@ export function apiPlugin() {
         await seedInitialUser();
         await seedDashboardScenarios();
         await seedScenarios(); // Simulation scenarios
+        await initializePersonaTables(); // Persona tables
       } catch (error) {
         console.error('Database setup failed:', error);
       }
@@ -1579,6 +1850,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await seedInitialUser();
       await seedDashboardScenarios();
       await seedScenarios();
+      await initializePersonaTables();
       await startServer();
     } catch (error) {
       console.error('Failed to start server:', error);

@@ -30,6 +30,12 @@ export { useQAStore } from './useQAStore';
 export { usePersonaStore } from './usePersonaStore';
 export type {
   Persona,
+  PersonaWithScenarios,
+  PersonaScenarioLink,
+  PersonaContractInfo,
+  PersonaBehaviorProfile,
+  PersonaContextOverride,
+  CallHistoryEntry,
   Simulation as PersonaSimulation,
 } from './usePersonaStore';
 export type {

@@ -6,6 +6,38 @@ Summary of recent feature development and enhancements.
 
 ## 📅 Latest Updates (February 2026)
 
+### 4. Persona Call History Synchronization ✅
+
+**Database-Driven Call History**
+- Created `persona_call_history` table with migration support
+- Seeded 12 realistic call history records for 8 default personas
+- Call history now persists across page reloads and sessions
+
+**Cross-Page Data Consistency**
+- Personas page (`/personas`) shows call history in detail view
+- ActiveSimulation page (`/simulation/:id`) shows same call history in Customer Data Panel
+- Both pages use unified API endpoints for consistent data
+
+**API Enhancements**
+- `getPersonaWithScenarios()` - includes `callHistory` in response
+- `getPrimaryPersonaForScenario()` - includes `callHistory` for simulation view
+- `seedCallHistory()` - deterministic seed data for all personas
+
+**UI Improvements**
+- Added loading state while fetching persona details
+- Added empty state message when no call history available
+- Null-safe rendering with `(callHistory || [])`
+
+**Files Modified:**
+- `server/personas.ts` - Database schema, seed data, API functions
+- `src/stores/usePersonaStore.ts` - Store types and API integration
+- `src/pages/Personas.tsx` - Detail view with call history
+- `src/pages/ActiveSimulation.tsx` - Customer Data Panel History tab
+
+---
+
+## 📅 Previous Updates (February 2026)
+
 ### 1. QA Scoring System Enhancement ✅
 
 **Flexible Scoring Types**
@@ -77,6 +109,7 @@ Summary of recent feature development and enhancements.
 
 | Feature | Status | Key Changes |
 |---------|--------|-------------|
+| **Persona Call History** | ✅ Complete | Database-synced call history across all views |
 | **QA Flexible Scoring** | ✅ Complete | Scale/Binary types, weights, required/optional |
 | **QA Reviewed Page** | ✅ Complete | `/qa-reviewed` with stats and comparison |
 | **Dual Audio Sync** | ✅ Complete | Channel selection, synchronized playback |

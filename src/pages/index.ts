@@ -4,6 +4,7 @@ export { default as Login } from './Login';
 export { default as Dashboard } from './Dashboard';
 export { default as Scenarios } from './Scenarios';
 export { default as Personas } from './Personas';
+export { default as PersonaBuilder } from './PersonaBuilder';
 export { default as Simulations } from './Simulations';
 export { default as ActiveSimulation } from './ActiveSimulation';
 export { default as Copilot } from './Copilot';

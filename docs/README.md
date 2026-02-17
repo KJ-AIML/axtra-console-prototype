@@ -65,6 +65,8 @@ Quick reference materials.
 
 | Document | Description |
 |----------|-------------|
+| [Changelog](./06-reference/CHANGELOG.md) | All version changes and updates |
+| [Version](./06-reference/VERSION.md) | Current version and release info |
 | [Troubleshooting](./06-reference/troubleshooting.md) | Common issues |
 | [Glossary](./06-reference/glossary.md) | Terms and definitions |
 

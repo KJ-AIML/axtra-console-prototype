@@ -10,6 +10,7 @@ import {
   Login,
   Scenarios,
   Personas,
+  PersonaBuilder,
   Simulations,
   ActiveSimulation,
   Copilot,
@@ -99,6 +100,8 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/personas" element={<Personas />} />
+            <Route path="/personas/new" element={<PersonaBuilder />} />
+            <Route path="/personas/:personaId/edit" element={<PersonaBuilder />} />
             <Route path="/simulations" element={<Simulations />} />
             <Route path="/copilot" element={<Copilot />} />
             <Route path="/active-calls" element={<ActiveCalls />} />
