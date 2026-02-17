@@ -86,7 +86,7 @@ interface LiveKitState {
   agentTrackId: string | null;
   
   // Actions
-  connect: (scenarioId: string) => Promise<void>;
+  connect: (scenarioId: string, connectionData?: { token: string; url: string; roomName: string; callSessionId?: string }) => Promise<void>;
   disconnect: () => void;
   endCallAndSave: () => Promise<{
     session: any;
@@ -131,12 +131,12 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
   agentTrackId: null,
 
   // Connect to room (creates room, agent will auto-join from server)
-  connect: async (scenarioId: string) => {
+  connect: async (scenarioId: string, connectionData?: { token: string; url: string; roomName: string; callSessionId?: string }) => {
     set({ isConnecting: true, connectionError: null });
     
     try {
-      // 1. Get token from our server
-      const { token, url, roomName } = await fetchLiveKitToken(scenarioId);
+      // 1. Get connection data (from params or fetch from server)
+      const { token, url, roomName, callSessionId: providedSessionId } = connectionData || await fetchLiveKitToken(scenarioId);
       
       // 2. Create room
       const room = createLiveKitRoom();
@@ -272,31 +272,38 @@ export const useLiveKitStore = create<LiveKitState>((set, get) => ({
         }
       }, 1000);
       
-      // Create call session in backend
-      try {
-        const token = localStorage.getItem('axtra_token');
-        const sessionResponse = await fetch('/api/calls', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': token ? `Bearer ${token}` : '',
-          },
-          body: JSON.stringify({
-            scenarioId,
-            roomName,
-          }),
-        });
-        
-        if (sessionResponse.ok) {
-          const sessionData = await sessionResponse.json();
-          set({ callSessionId: sessionData.data.session.id });
-          console.log('[LiveKit] Call session created:', sessionData.data.session.id);
-        } else {
-          const errorData = await sessionResponse.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('[LiveKit] Failed to create call session:', errorData);
+      // Use provided session ID or create new call session (legacy flow)
+      if (providedSessionId) {
+        // New explicit dispatch flow: session already created by /api/simulations/start
+        set({ callSessionId: providedSessionId });
+        console.log('[LiveKit] Using existing call session:', providedSessionId);
+      } else {
+        // Legacy flow: create call session in backend
+        try {
+          const token = localStorage.getItem('axtra_token');
+          const sessionResponse = await fetch('/api/calls', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify({
+              scenarioId,
+              roomName,
+            }),
+          });
+          
+          if (sessionResponse.ok) {
+            const sessionData = await sessionResponse.json();
+            set({ callSessionId: sessionData.data.session.id });
+            console.log('[LiveKit] Call session created:', sessionData.data.session.id);
+          } else {
+            const errorData = await sessionResponse.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('[LiveKit] Failed to create call session:', errorData);
+          }
+        } catch (e) {
+          console.error('[LiveKit] Failed to create call session:', e);
         }
-      } catch (e) {
-        console.error('[LiveKit] Failed to create call session:', e);
       }
       
       set({ 

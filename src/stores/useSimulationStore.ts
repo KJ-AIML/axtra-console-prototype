@@ -36,7 +36,16 @@ interface SimulationState {
   fetchScenarios: () => Promise<void>;
   fetchRecommendedScenarios: () => Promise<void>;
   fetchStats: () => Promise<void>;
-  startSimulation: (scenarioId: string) => Promise<void>;
+  startSimulation: (scenarioId: string, personaId?: string) => Promise<{
+    callSessionId: string;
+    roomName: string;
+    token: string;
+    url: string;
+    dispatchId: string;
+    agentName: string;
+    persona: { id: string; name: string };
+    scenario: { id: string; title: string };
+  }>;
   completeSimulation: (scenarioId: string, score: number, feedback?: string) => Promise<void>;
   createScenario: (data: Partial<Scenario>) => Promise<Scenario | null>;
   updateScenario: (id: string, data: Partial<Scenario>) => Promise<boolean>;
@@ -97,17 +106,38 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     }
   },
 
-  startSimulation: async (scenarioId: string) => {
+  startSimulation: async (scenarioId: string, personaId?: string) => {
+    set({ isLoading: true, error: null });
+    
     try {
-      await apiClient.post(`/scenarios/${scenarioId}/start`, {});
+      const response = await apiClient.post<{
+        success: boolean;
+        data: {
+          callSessionId: string;
+          roomName: string;
+          token: string;
+          url: string;
+          dispatchId: string;
+          agentName: string;
+          persona: { id: string; name: string };
+          scenario: { id: string; title: string };
+        };
+      }>('/simulations/start', { scenarioId, personaId });
       
       // Update local state
       const scenarios = get().scenarios.map(s => 
         s.id === scenarioId ? { ...s, status: 'in_progress' as const } : s
       );
-      set({ scenarios });
+      set({ 
+        scenarios,
+        isLoading: false,
+        error: null,
+      });
+      
+      return response.data;
     } catch (error) {
-      console.error('Failed to start simulation:', error);
+      const message = error instanceof Error ? error.message : 'Failed to start simulation';
+      set({ isLoading: false, error: message });
       throw error;
     }
   },

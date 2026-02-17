@@ -44,6 +44,7 @@ import {
   generateLiveKitToken,
   isLiveKitConfigured,
   generateRoomName,
+  dispatchAgent,
   type TokenRequest,
 } from './livekit';
 import {
@@ -624,6 +625,125 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('LiveKit token generation error:', error);
         sendJson(res, 500, { error: 'Failed to generate token' });
+      }
+      return;
+    }
+
+    // Start simulation with AI agent dispatch
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'simulations' && segments[1] === 'start') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      if (!isLiveKitConfigured()) {
+        sendJson(res, 503, { error: 'LiveKit not configured' });
+        return;
+      }
+      
+      try {
+        const body = await parseBody(req) as { 
+          scenarioId: string;
+          personaId?: string;
+        };
+        
+        if (!body.scenarioId) {
+          sendJson(res, 400, { error: 'scenarioId is required' });
+          return;
+        }
+        
+        // Get scenario details
+        const scenario = await getScenarioById(body.scenarioId);
+        if (!scenario) {
+          sendJson(res, 404, { error: 'Scenario not found' });
+          return;
+        }
+        
+        // Get persona details (use specified or get primary for scenario)
+        let persona;
+        if (body.personaId) {
+          const { getPersonaById } = await import('./personas');
+          persona = await getPersonaById(body.personaId);
+        } else {
+          const { getPrimaryPersonaForScenario } = await import('./personas');
+          const primaryPersona = await getPrimaryPersonaForScenario(body.scenarioId);
+          persona = primaryPersona;
+        }
+        
+        if (!persona) {
+          sendJson(res, 404, { error: 'No persona available for this scenario' });
+          return;
+        }
+        
+        // Generate unique room name
+        const roomName = generateRoomName(body.scenarioId, user.id);
+        
+        // Generate token for the user
+        const tokenData = await generateLiveKitToken({
+          roomName,
+          participantName: user.name || user.email,
+          userId: user.id,
+        });
+        
+        // Dispatch AI agent to the room with persona/scenario config
+        const dispatch = await dispatchAgent(
+          roomName,
+          {
+            id: persona.id,
+            name: persona.name,
+            behaviorProfile: persona.behaviorProfile,
+            systemPrompt: persona.systemPrompt || undefined,
+            voiceId: persona.voiceId || undefined,
+          },
+          {
+            id: scenario.id,
+            title: scenario.title,
+            description: scenario.description || undefined,
+            difficulty: scenario.difficulty,
+          },
+          {
+            userId: user.id,
+            userName: user.name || user.email,
+          }
+        );
+        
+        // Create call session record
+        const { createCallSession } = await import('./call-sessions');
+        const callSession = await createCallSession({
+          user_id: user.id,
+          scenario_id: body.scenarioId,
+          room_name: roomName,
+        });
+        
+        sendJson(res, 200, { 
+          success: true, 
+          data: {
+            callSessionId: callSession.id,
+            roomName,
+            token: tokenData.token,
+            url: tokenData.url,
+            dispatchId: dispatch.dispatchId,
+            agentName: dispatch.agentName,
+            persona: {
+              id: persona.id,
+              name: persona.name,
+            },
+            scenario: {
+              id: scenario.id,
+              title: scenario.title,
+            },
+          }
+        });
+      } catch (error) {
+        console.error('Simulation start error:', error);
+        sendJson(res, 500, { error: 'Failed to start simulation' });
       }
       return;
     }

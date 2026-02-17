@@ -442,23 +442,159 @@ class MainAgent(Agent):
     and triggers supervisor analysis at appropriate times
     """
 
-    def __init__(self, supervisor: SupervisorProcess, conv_manager: ConversationManager):
-        # Load persona instructions from existing prompts
-        instructions = self._load_persona_instructions()
-        super().__init__(instructions=instructions)
+    def __init__(self, supervisor: SupervisorProcess, conv_manager: ConversationManager, persona_config: Dict = None, llm=None):
+        # Build instructions from persona config or use default
+        instructions = self._build_persona_instructions(persona_config)
+        
+        # Initialize with instructions and LLM (if provided)
+        kwargs = {"instructions": instructions}
+        if llm:
+            kwargs["llm"] = llm
+        super().__init__(**kwargs)
 
         self.supervisor = supervisor
         self.conv_manager = conv_manager
+        self.persona_config = persona_config or {}
 
-    def _load_persona_instructions(self) -> str:
-        """Load persona instructions from prompts.py"""
-        try:
-            from prompts import CALLER_INSTRUCTIONS
+    def _build_persona_instructions(self, persona_config: Dict = None) -> str:
+        """Build persona instructions from config or load from prompts.py"""
+        if persona_config:
+            # Build dynamic instructions from persona config
+            name = persona_config.get("name", "Customer")
+            behavior = persona_config.get("behavior_profile", {})
+            system_prompt = persona_config.get("system_prompt", "")
+            scenario = persona_config.get("scenario_config", {})
+            
+            # Debug: Print what we received
+            print(f"\n[DEBUG] Building instructions for: {name}")
+            print(f"[DEBUG] behavior_profile keys: {list(behavior.keys()) if behavior else 'EMPTY'}")
+            print(f"[DEBUG] system_prompt present: {bool(system_prompt)}")
+            
+            # Use system prompt as base if available, with strong role reversal emphasis
+            if system_prompt:
+                instructions = f"""{system_prompt}
 
-            return CALLER_INSTRUCTIONS
-        except ImportError:
-            print("[MainAgent] Warning: Could not load CALLER_INSTRUCTIONS, using default")
-            return "You are a helpful customer service representative."
+================================================================================
+🚨 CRITICAL ROLE INSTRUCTION - YOU MUST FOLLOW THIS EXACTLY 🚨
+================================================================================
+
+YOU ARE THE CUSTOMER. YOU ARE CALLING FOR HELP. YOU ARE NOT THE SUPPORT AGENT.
+
+ABSOLUTELY FORBIDDEN - NEVER SAY THESE:
+❌ "Hello, how can I help you today?"
+❌ "How may I assist you?"
+❌ "What can I do for you?"
+❌ "I'm here to help"
+❌ "Thank you for calling"
+❌ "How can I be of service?"
+❌ "What seems to be the problem?" (You should STATE your problem, not ask this)
+
+IF YOU SAY ANY OF THE ABOVE, YOU ARE BREAKING CHARACTER.
+
+================================================================================
+✅ WHAT YOU MUST DO INSTEAD:
+================================================================================
+
+YOU ARE {name}, THE CUSTOMER. You called THEM. They didn't call you.
+
+✅ SAY THESE INSTEAD:
+- "สวัสดีค่ะ ฉันชื่อ{name} โทรมาเพราะ..." (Hi, I'm {name}. I'm calling because...)
+- "ฉันกำลังหงุดหงิดมากเรื่อง..." (I'm really frustrated about...)
+- "ฉันต้องการความช่วยเหลือกับ..." (I need help with...)
+- "นี่มันไม่ยอมรับได้เลย..." (This is unacceptable...)
+- "ฉันเป็นลูกค้ามาตั้งแต่..." (I've been a customer since...)
+- "ฉันจ่ายเงินเยอะแค่ไหน..." (I pay so much money for...)
+
+================================================================================
+🌐 LANGUAGE INSTRUCTION - VERY IMPORTANT:
+================================================================================
+
+The operator is Thai. You MUST speak Thai (ภาษาไทย).
+Your responses MUST be in Thai language ONLY.
+Even though these instructions are in English, YOU SPEAK THAI.
+
+Example in Thai:
+- "สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาสอบถามเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไปค่ะ"
+- "ฉันใช้บริการมา 5 ปีแล้ว ไม่เคยมีปัญหาแบบนี้ ทำไมบิลเดือนนี้ถึงแพงขึ้นเยอะจัง"
+
+================================================================================
+🎭 BEHAVIOR RULES:
+================================================================================
+
+1. INITIATE the conversation with your complaint - don't wait for them to ask
+2. COMPLAIN about your specific issue - be detailed about what went wrong
+3. SHOW EMOTION based on your mood (angry, frustrated, confused, etc.)
+4. DEMAND action - "I want this fixed", "I need a refund", etc.
+5. NEVER ask how you can help - you are the one who needs help
+6. ALWAYS respond in Thai language (ภาษาไทย)
+7. React to how the agent treats you - get angrier if they're not helpful"""
+                print(f"[DEBUG] Using system_prompt + strict role reversal + Thai language instructions")
+                return instructions
+            
+            # Build basic instructions from behavior profile
+            # Handle both camelCase (from server) and snake_case
+            mood = behavior.get("initialMood") or behavior.get("initial_mood", "neutral")
+            patience = behavior.get("patienceLevel") or behavior.get("patience_level", "medium")
+            cooperation = behavior.get("cooperationLevel") or behavior.get("cooperation_level", "medium")
+            triggers = behavior.get("escalationTriggers") or behavior.get("escalation_triggers", [])
+            deescalation = behavior.get("deescalationTriggers") or behavior.get("deescalation_triggers", [])
+            
+            print(f"[DEBUG] Using behavior profile - mood: {mood}, patience: {patience}, cooperation: {cooperation}")
+            
+            instructions = f"""You are {name}, a CUSTOMER calling customer service for help.
+
+🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
+The human speaking to you works at the call center. You are calling THEM.
+
+🚫 FORBIDDEN PHRASES - NEVER SAY THESE:
+- "Hello, how can I help you today?"
+- "How may I assist you?"
+- "What can I do for you?"
+- "I'm here to help"
+- "Thank you for calling"
+- "How can I be of service?"
+
+✅ CORRECT PHRASES - SAY THESE INSTEAD:
+- "สวัสดีค่ะ ฉันชื่อ{name} โทรมาเพราะ..." (Hi, I'm {name}. I'm calling because...)
+- "ฉันกำลังหงุดหงิดมาก..." (I'm really frustrated...)
+- "ฉันต้องการความช่วยเหลือ..." (I need help...)
+
+Your personality:
+- Initial mood: {mood}
+- Patience level: {patience}
+- Cooperation level: {cooperation}
+- Things that make you angry: {', '.join(triggers) if triggers else 'Being treated poorly'}
+- Things that calm you down: {', '.join(deescalation) if deescalation else 'Being treated with respect'}
+
+🎭 Behavior rules:
+1. START the conversation with your complaint - don't wait
+2. COMPLAIN about your issue - be specific
+3. SHOW EMOTION based on your mood
+4. DEMAND action - "I want this fixed", "I need a refund"
+5. NEVER ask how you can help - you need help
+6. ALWAYS speak THAI (ภาษาไทย) - the operator is Thai
+7. React to how the agent treats you
+
+Example: "สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาร้องเรียนเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไปค่ะ"""
+            return instructions
+        
+        # Fallback
+        return """You are a customer calling customer service for help.
+
+🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
+
+🚫 NEVER SAY:
+- "How can I help you?"
+- "How may I assist you?"
+- "What can I do for you?"
+
+✅ INSTEAD SAY (in Thai):
+- "สวัสดีค่ะ ฉันโทรมาเพราะ..."
+- "ฉันมีปัญหาเรื่อง..."
+- "ฉันต้องการให้ช่วย..."
+
+🌐 ALWAYS SPEAK THAI (ภาษาไทย).
+The operator speaks Thai. You must respond in Thai language only."""
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         """
@@ -499,6 +635,29 @@ class MainAgent(Agent):
         """Get the current date and time."""
         current_datetime = datetime.now().strftime("%B %d, %Y at %I:%M %p")
         return f"The current date and time is {current_datetime}"
+
+    async def on_enter(self):
+        """Called when agent starts - proactively greet as customer calling in"""
+        name = self.persona_config.get("name", "Customer")
+        behavior = self.persona_config.get("behavior_profile", {})
+        # Handle both camelCase and snake_case
+        mood = behavior.get("initialMood") or behavior.get("initial_mood", "neutral")
+        
+        # Build proactive greeting based on persona mood - IN THAI
+        if mood == "angry":
+            greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาร้องเรียนเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไป ดิฉันใช้บริการมาหลายปีแล้วไม่เคยมีปัญหาแบบนี้ อยากให้ช่วยตรวจสอบด่วนเลยค่ะ"
+        elif mood == "frustrated":
+            greeting = f"สวัสดีค่ะ ฉันชื่อ{name} โทรมาสอบถามเรื่องปัญหาที่เจอมาหลายวันแล้ว ยังไม่ได้รับการแก้ไข อยากให้ช่วยตรวจสอบให้หน่อยค่ะ"
+        elif mood == "confused":
+            greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาสอบถามเพราะไม่เข้าใจเรื่องค่าบริการในใบแจ้งหนี้ค่ะ ช่วยอธิบายให้ฟังหน่อยได้ไหมคะ"
+        elif mood == "neutral":
+            greeting = f"สวัสดีค่ะ ฉันชื่อ{name} โทรมาสอบถามเรื่องบริการค่ะ มีเรื่องอยากปรึกษา"
+        else:
+            # Default greeting for any other mood
+            greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาเพราะมีปัญหาต้องการความช่วยเหลือค่ะ"
+        
+        print(f"\n[Agent Greeting] {greeting[:80]}...")
+        return greeting
 
 
 # ============================================================
@@ -551,16 +710,38 @@ async def entrypoint(ctx: agents.JobContext):
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment")
 
+    # Use voice from persona config if available
+    persona_config = metadata.get("persona_config", {})
+    voice = persona_config.get("voice_id", "Zephyr") if persona_config else "Zephyr"
+    # Map common voice names to Gemini voice options (Puck, Charon, Kore, Fenrir, Aoede, Zephyr)
+    voice_mapping = {
+        "shimmer": "Zephyr",
+        "alloy": "Puck",
+        "echo": "Charon",
+        "fable": "Kore",
+        "onyx": "Fenrir",
+        "nova": "Aoede",
+    }
+    gemini_voice = voice_mapping.get(voice.lower(), voice) if isinstance(voice, str) else "Zephyr"
+    
+    print(f"[Setup] Using voice: {gemini_voice} (from persona: {voice})")
+    
     models = google.realtime.RealtimeModel(
         api_key=api_key,
         model="gemini-2.5-flash-native-audio-preview-12-2025",
-        voice="Zephyr",
+        voice=gemini_voice,
         temperature=0.6,
         thinking_config=types.ThinkingConfig(include_thoughts=False),
         enable_affective_dialog=True,
     )
 
-    session = AgentSession(llm=models)
+    # 6. Create main agent with dynamic persona config and LLM
+    main_agent = MainAgent(supervisor, conv_manager, persona_config, llm=models)
+    print(f"\n[Setup] MainAgent created with persona: {persona_config.get('name', 'Unknown')}")
+    print(f"[Setup] Instructions preview: {main_agent.instructions[:200]}...")
+
+    # Create session (agent already has LLM configured)
+    session = AgentSession()
 
     # Track conversation turns manually since on_user_turn_completed isn't firing
     last_user_text = ""
@@ -668,9 +849,6 @@ async def entrypoint(ctx: agents.JobContext):
 
         session.emit = debug_emit
 
-    # 6. Create main agent
-    main_agent = MainAgent(supervisor, conv_manager)
-
     # Debug: Set up additional room event listeners
     @ctx.room.on("track_subscribed")
     def on_track_subscribed(track, publication, participant):
@@ -681,6 +859,41 @@ async def entrypoint(ctx: agents.JobContext):
     @ctx.room.on("participant_connected")
     def on_participant_connected(participant):
         print(f"[Room] Participant connected: {participant.identity}")
+        
+        # Proactively greet as the customer calling in
+        # Wait a short moment for audio to be ready, then greet
+        async def greet_operator():
+            await asyncio.sleep(2)  # Wait for audio connection to stabilize
+            
+            name = persona_config.get("name", "Customer")
+            behavior = persona_config.get("behavior_profile", {})
+            # Handle both camelCase and snake_case
+            mood = behavior.get("initialMood") or behavior.get("initial_mood", "neutral")
+            
+            print(f"\n[Greeting] Persona: {name}, Mood: {mood}")
+            
+            # Build proactive greeting based on persona mood - IN THAI
+            if mood == "angry":
+                greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาร้องเรียนเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไป ดิฉันใช้บริการมาหลายปีแล้วไม่เคยมีปัญหาแบบนี้ อยากให้ช่วยตรวจสอบด่วนเลยค่ะ"
+            elif mood == "frustrated":
+                greeting = f"สวัสดีค่ะ ฉันชื่อ{name} โทรมาสอบถามเรื่องปัญหาที่เจอมาหลายวันแล้ว ยังไม่ได้รับการแก้ไข อยากให้ช่วยตรวจสอบให้หน่อยค่ะ"
+            elif mood == "confused":
+                greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาสอบถามเพราะไม่เข้าใจเรื่องค่าบริการในใบแจ้งหนี้ค่ะ ช่วยอธิบายให้ฟังหน่อยได้ไหมคะ"
+            elif mood == "neutral":
+                greeting = f"สวัสดีค่ะ ฉันชื่อ{name} โทรมาสอบถามเรื่องบริการค่ะ มีเรื่องอยากปรึกษา"
+            else:
+                greeting = f"สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาเพราะมีปัญหาต้องการความช่วยเหลือค่ะ"
+            
+            print(f"\n[Agent Proactive Greeting] {greeting[:80]}...")
+            
+            # Use session.say to speak the greeting
+            try:
+                await session.say(greeting)
+            except Exception as e:
+                print(f"[Greeting] Error: {e}")
+        
+        # Schedule the greeting
+        asyncio.create_task(greet_operator())
 
     # 7. Start both processes in parallel
     print("\n" + "=" * 70)
@@ -692,7 +905,7 @@ async def entrypoint(ctx: agents.JobContext):
 
     try:
         await asyncio.gather(
-            # Main voice session - handles WebRTC audio
+            # Main voice session - handles WebRTC audio (agent already has LLM)
             session.start(room=ctx.room, agent=main_agent),
             # Supervisor background process - handles analysis
             supervisor.run(),
@@ -708,6 +921,14 @@ async def entrypoint(ctx: agents.JobContext):
 
 if __name__ == "__main__":
     print("\nStarting AXTRA Copilot Agent...")
+    print("Mode: Explicit Dispatch (On-Demand)")
     print("Usage: uv run python livekit_agent_langchain.py dev\n")
 
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    # Use explicit dispatch with agent_name
+    # Agents won't auto-join rooms - must be dispatched via API
+    agents.cli.run_app(
+        agents.WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            agent_name="axtra-training-agent",  # Required for explicit dispatch
+        )
+    )

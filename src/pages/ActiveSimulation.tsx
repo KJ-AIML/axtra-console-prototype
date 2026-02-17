@@ -9,6 +9,7 @@ import { cn } from '../utils/classnames';
 import { apiClient } from '../lib/api-client';
 import { useLiveKitStore, showError, showSuccess } from '../stores';
 import { usePersonaStore, type Persona, type PersonaContextOverride } from '../stores';
+import { useSimulationStore } from '../stores';
 import {
   LiveKitCallControls,
   LiveKitTranscript,
@@ -332,6 +333,8 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     startAudio,
     resetState,
   } = useLiveKitStore();
+  
+  const { startSimulation } = useSimulationStore();
 
   const [showWelcome, setShowWelcome] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
@@ -342,6 +345,7 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     summary: any;
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -350,17 +354,45 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
     };
   }, [disconnect]);
 
-  // Handle start call
+  // Handle start call with agent dispatch
   const handleStartCall = useCallback(async () => {
+    setIsStarting(true);
+    
     try {
-      await connect(scenarioId);
+      // 1. Start simulation - this dispatches the AI agent
+      const simData = await startSimulation(scenarioId);
+      
+      if (!simData) {
+        throw new Error('Failed to start simulation');
+      }
+      
+      console.log('[Simulation] Started with dispatch:', simData.dispatchId);
+      console.log('[Simulation] AI Agent:', simData.agentName);
+      console.log('[Simulation] Persona:', simData.persona.name);
+      
+      // 2. Connect to LiveKit room with the token from dispatch
+      await connect(scenarioId, {
+        token: simData.token,
+        url: simData.url,
+        roomName: simData.roomName,
+        callSessionId: simData.callSessionId,
+      });
+      
       setShowWelcome(false);
-      showSuccess('Connected', 'Voice call started. The AI agent will join shortly.');
+      showSuccess(
+        'Connected', 
+        `Voice call started with ${simData.persona.name}. The AI agent will join shortly.`
+      );
     } catch (err) {
-      console.error('Failed to connect:', err);
-      showError('Connection failed', err instanceof Error ? err.message : 'Failed to connect to voice server');
+      console.error('Failed to start simulation:', err);
+      showError(
+        'Connection failed', 
+        err instanceof Error ? err.message : 'Failed to start voice simulation'
+      );
+    } finally {
+      setIsStarting(false);
     }
-  }, [scenarioId, connect]);
+  }, [scenarioId, connect, startSimulation]);
 
   // Handle enable audio (browser requires user gesture)
   const handleEnableAudio = useCallback(async () => {
@@ -509,6 +541,8 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   }
 
   // Show welcome screen before call starts
+  const isLoading = isStarting || isConnecting;
+  
   if (showWelcome || (!isConnected && !isConnecting)) {
     return (
       <div className="h-full flex flex-col bg-white border-l border-r border-gray-200">
@@ -516,7 +550,8 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
           scenarioTitle={scenario.title}
           personaName={scenario.persona}
           difficulty={scenario.difficulty}
-          isConnecting={isConnecting}
+          isConnecting={isLoading}
+          isStarting={isStarting}
           connectionError={connectionError}
           needsAudioPermission={isConnected && !canPlaybackAudio}
           onStartCall={handleStartCall}
