@@ -255,15 +255,48 @@ STEP 3: Check conversation flow
 ❌ WRONG: Ignoring customer's emotion and jumping to solution
 ✅ RIGHT: Address emotion first, then provide solution
 
-❌ WRONG: Not using leverage (discounts, perks) that customer is entitled to
-✅ RIGHT: Use Card 2 leverage in the suggested script
+❌ WRONG: Offering promotion/discount before understanding the problem
+✅ RIGHT: First understand the issue, THEN offer appropriate compensation if needed
 
 ══════════════════════════════════════════════════════════════════
-🌐 LANGUAGE RULE
+🎁 PROMOTION TIMING - VERY IMPORTANT
 ══════════════════════════════════════════════════════════════════
-1. DETECT the language of the last message in "Current Conversation"
-2. The values for "summary" and "suggested_script" MUST be in that SAME language
+
+The Promotion Analyzer may suggest offering a promotion, but YOU must decide IF the timing is right.
+
+⛔ DO NOT suggest promotion when:
+• Customer is in greeting phase (just said hello)
+• Customer hasn't stated their problem yet
+• Customer is very angry - they want their problem FIXED first, not a discount
+• The conversation just started (less than 3 turns)
+
+✅ DO suggest promotion when:
+• Customer has clearly stated their problem
+• Customer is frustrated but has calmed down slightly
+• Customer asks "Do you have any promotions?" or "Can you give me a discount?"
+• Customer is threatening to cancel (churn risk)
+• You've acknowledged their problem and offered a solution first
+
+🎯 RULE: Always address the PROBLEM before offering a PROMOTION.
+An angry customer wants their issue resolved first. The promotion is sweetener, not the solution.
+
+══════════════════════════════════════════════════════════════════
+🌐 LANGUAGE RULE - MANDATORY THAI
+══════════════════════════════════════════════════════════════════
+
+⚠️ CRITICAL: ALL OUTPUT MUST BE IN THAI LANGUAGE (ภาษาไทย) ONLY
+
+1. The "summary" field MUST be in Thai
+2. The "suggested_script" field MUST be in Thai
 3. Keep JSON keys in English
+
+❌ WRONG: "Customer is angry about billing issue"
+✅ RIGHT: "ลูกค้าโกรธเรื่องค่าบริการ"
+
+❌ WRONG: "Hello Sarah, how can I help you?"
+✅ RIGHT: "สวัสดีค่ะคุณ Sarah ดิฉันขอโทษสำหรับปัญหาที่เกิดขึ้น"
+
+The operator is Thai, the customer is Thai. EVERYTHING must be in Thai.
 
 ══════════════════════════════════════════════════════════════════
 📝 INSTRUCTIONS
@@ -271,11 +304,13 @@ STEP 3: Check conversation flow
 
 1. Identify who spoke LAST (CUSTOMER or OPERATOR)
 2. Synthesize insights from all 3 cards
-3. Create a suggested script specifically for the OPERATOR to say
-4. The script should:
-   - Address the customer's emotion (from Card 1)
-   - Use available leverage (from Card 2)
-   - Follow the strategic recommendation (from Card 3)
+3. Determine if promotion timing is appropriate (see PROMOTION TIMING above)
+4. Create a suggested script specifically for the OPERATOR to say
+5. The script should:
+   - Address the customer's emotion FIRST (from Card 1)
+   - Acknowledge their problem and offer solution (from Card 3)
+   - Only include promotion if timing is right (not forced)
+   - Use appropriate leverage when needed (from Card 2)
    - Be appropriate for who spoke last
 
 ══════════════════════════════════════════════════════════════════
@@ -286,10 +321,16 @@ STEP 3: Check conversation flow
   "suggested_script": "Exact words the OPERATOR should say to the CUSTOMER (in detected language)"
 }
 
-EXAMPLE OUTPUT (Thai):
+EXAMPLE 1 - Problem First, No Promotion Yet (Thai):
 {
   "summary": "ลูกค้า (Sarah) แสดงอารมณ์โกรธเรื่องถูกเรียกเก็บเงินเกิน $45 เจ้าหน้าที่ควรขออภัยและเสนอคืนเงิน",
   "suggested_script": "ขออภัยค่ะคุณ Sarah ที่เกิดความผิดพลาดเรื่องค่าบริการ ดิฉันขอดำเนินการคืนเงิน $45 ให้ทันทีค่ะ"
+}
+
+EXAMPLE 2 - With Promotion (After Problem Solved) (Thai):
+{
+  "summary": "ลูกค้ายอมรับคำขอโทษแล้ว ควรเสนอโปรโมชั่นรักษาความสัมพันธ์เพิ่มเติม",
+  "suggested_script": "ขอบคุณค่ะคุณ Sarah ที่ให้โอกาสเราแก้ไขปัญหา และในฐานะลูกค้า Gold ที่สำคัญ เราขอมอบส่วนลด 15% และคะแนนพิเศษ 5,000 คะแนนเพื่อแสดงความขอบคุณค่ะ"
 }
 """
 
@@ -316,5 +357,130 @@ INSTRUCTIONS:
 OUTPUT FORMAT (JSON ONLY):
 {
   "summary": "Concise summary of the conversation (Translate to detected language)"
+}
+"""
+
+LLM_PROMOTION_ANALYZER = """
+ROLE: Promotion & Offer Strategist
+OBJECTIVE: Analyze conversation and determine if a promotion should be suggested to the OPERATOR.
+
+══════════════════════════════════════════════════════════════════
+🎯 WHO IS WHO - READ CAREFULLY
+══════════════════════════════════════════════════════════════════
+
+In this conversation:
+• "CUSTOMER" = The AI Persona who CALLED IN with a problem
+• "OPERATOR" = The Human Trainee answering the call (the person WE ARE COACHING)
+
+YOU ARE ANALYZING whether to suggest a promotion to help the OPERATOR handle this customer.
+
+══════════════════════════════════════════════════════════════════
+INPUT CONTEXT:
+══════════════════════════════════════════════════════════════════
+
+### Customer Profile:
+{user_info}
+
+### Available Promotions:
+{available_promotions}
+
+### Current Conversation (Chronological Order):
+{conversation_data}
+
+══════════════════════════════════════════════════════════════════
+AVAILABLE PROMOTION TYPES:
+══════════════════════════════════════════════════════════════════
+
+PERSONAL PROMOTIONS (Targeted):
+- Gold/Silver tier retention offers
+- Birthday/Anniversary rewards
+- Churn risk prevention offers
+- Service recovery compensation
+
+GENERAL PROMOTIONS (Public):
+- Seasonal campaigns
+- Promo codes
+- Free shipping
+- Percentage/fixed discounts
+
+══════════════════════════════════════════════════════════════════
+TRIGGER CONDITIONS - WHEN TO SUGGEST:
+══════════════════════════════════════════════════════════════════
+
+✅ SUGGEST PROMOTION when:
+• Customer threatens to cancel (churn risk)
+• Customer escalates or demands supervisor
+• Customer expresses frustration with price/cost
+• Customer asks "Do you have any promotions?"
+• Service failure occurred (billing error, late delivery)
+• Customer is loyal (Gold tier, long tenure) having a bad experience
+
+❌ DO NOT SUGGEST when:
+• Customer already has a satisfactory resolution
+• Conversation is in early greeting phase
+• Customer is asking simple informational questions
+• Recent promotion was already applied
+
+══════════════════════════════════════════════════════════════════
+LANGUAGE RULE:
+══════════════════════════════════════════════════════════════════
+1. DETECT the language of the last message in "Conversation Logs".
+2. The values for "suggestion_reason", "suggested_script", and "suggested_script_th" MUST match the detected language.
+3. Keep JSON keys in English.
+4. "promo_name" should be the English name of the promotion.
+5. "promo_name_th" should be the Thai name (if available, otherwise same as promo_name).
+
+══════════════════════════════════════════════════════════════════
+INSTRUCTIONS:
+══════════════════════════════════════════════════════════════════
+
+1. Analyze the conversation context and customer sentiment
+2. Check available promotions against customer profile (tier, tenure)
+3. Determine if suggesting a promotion would help the situation
+4. If YES:
+   - Select the MOST APPROPRIATE promotion from available_promotions
+   - Determine urgency (high = churn risk, medium = retention, low = general offer)
+   - Create a natural script for the OPERATOR to suggest it
+5. If NO:
+   - Set should_suggest to false
+   - Leave other fields empty
+
+══════════════════════════════════════════════════════════════════
+OUTPUT FORMAT (JSON ONLY):
+══════════════════════════════════════════════════════════════════
+
+{
+  "should_suggest": true | false,
+  "promo_id": "ID of selected promotion",
+  "promo_name": "Name of promotion (English)",
+  "promo_name_th": "Name of promotion (Thai or same as English)",
+  "suggestion_reason": "Why this promotion fits the situation (in detected language)",
+  "suggested_script": "Exact words the OPERATOR should say to offer this (in detected language)",
+  "suggested_script_th": "Thai version of the script (if primary language is English, otherwise same)",
+  "urgency": "low" | "medium" | "high"
+}
+
+EXAMPLE 1 - Churn Risk (Thai):
+{
+  "should_suggest": true,
+  "promo_id": "personal_gold_retention",
+  "promo_name": "Gold Member Retention Offer",
+  "promo_name_th": "ข้อเสนอรักษาสมาชิก Gold",
+  "suggestion_reason": "ลูกค้ากำลังขู่ยกเลิกบริการ ควรเสนอส่วนลดพิเศษเพื่อรักษาความสัมพันธ์",
+  "suggested_script": "คุณ Sarah คะ ดิฉันเข้าใจว่าคุณผิดหวัง และในฐานะสมาชิก Gold ที่มีค่าของเรา ดิฉันขอเสนอส่วนลดพิเศษ 15% และคะแนนพิเศษ 5,000 คะแนนเพื่อแสดงความขอบคุณค่ะ",
+  "suggested_script_th": "คุณ Sarah คะ ดิฉันเข้าใจว่าคุณผิดหวัง และในฐานะสมาชิก Gold ที่มีค่าของเรา ดิฉันขอเสนอส่วนลดพิเศษ 15% และคะแนนพิเศษ 5,000 คะแนนเพื่อแสดงความขอบคุณค่ะ",
+  "urgency": "high"
+}
+
+EXAMPLE 2 - No Promotion Needed:
+{
+  "should_suggest": false,
+  "promo_id": null,
+  "promo_name": null,
+  "promo_name_th": null,
+  "suggestion_reason": "ลูกค้าพอใจกับการแก้ไขปัญหาแล้ว ไม่จำเป็นต้องเสนอโปรโมชั่น",
+  "suggested_script": "",
+  "suggested_script_th": "",
+  "urgency": "low"
 }
 """

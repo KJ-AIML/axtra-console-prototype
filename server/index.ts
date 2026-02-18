@@ -738,10 +738,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         console.log(`   ✅ Token generated (length: ${tokenData.token.length})`);
         console.log(`   🔗 LiveKit URL: ${tokenData.url}`);
         
-        // Prepare dispatch config
+        // Calculate tenure from accountSince
+        const tenureMonths = persona.accountSince 
+          ? Math.floor((Date.now() - new Date(persona.accountSince).getTime()) / (1000 * 60 * 60 * 24 * 30))
+          : 0;
+        const accountAgeYears = persona.accountSince
+          ? Math.floor((Date.now() - new Date(persona.accountSince).getTime()) / (1000 * 60 * 60 * 24 * 365))
+          : 0;
+        const ltv = persona.accountValue || (persona.contractInfo?.monthlyValue ? persona.contractInfo.monthlyValue * 12 : 0);
+        
+        // Prepare dispatch config with full customer info for promotion matching
         const personaConfig = {
           id: persona.id,
           name: persona.name,
+          tier: persona.tier || 'Standard',
+          tenureMonths,           // For promotion tenure criteria
+          accountAgeYears,        // For promotion account age criteria
+          ltv,                    // For promotion LTV criteria
           behaviorProfile: persona.behaviorProfile,
           systemPrompt: persona.systemPrompt || undefined,
           voiceId: persona.voiceId || undefined,

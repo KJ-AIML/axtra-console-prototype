@@ -342,6 +342,8 @@ class SupervisorProcess:
             "user_info": data.get("user_info", {}),
             "context_summary": data.get("context_summary", []),
             "conversation_data": data.get("conversation_data", []),
+            "available_promotions": getattr(self, 'available_promotions', []),
+            "coaching_context": data.get("coaching_context", {}),
         }
 
         # Log detailed workflow input
@@ -405,6 +407,11 @@ class SupervisorProcess:
                 "summary": raw_script.get("summary", ""),
                 "suggestion": raw_script.get("suggestion", raw_script.get("suggested_script", "")),
             }
+            
+            # Extract promotion suggestion
+            promotion_suggestion = result.get("promotion_suggestion")
+            if promotion_suggestion:
+                print(f"[Supervisor] 🎁 Promotion suggestion: {promotion_suggestion.get('promo_name', 'N/A')}")
 
             # Validate results
             if not all(cards):
@@ -415,7 +422,7 @@ class SupervisorProcess:
             print(f"[Supervisor] Script preview: {script['suggestion'][:100]}...")
 
             # Send to frontend
-            await self._publish_to_frontend(cards, script)
+            await self._publish_to_frontend(cards, script, promotion_suggestion)
 
         except Exception as e:
             print(f"[Supervisor] ❌ Workflow error: {e}")
@@ -423,7 +430,7 @@ class SupervisorProcess:
 
             traceback.print_exc()
 
-    async def _publish_to_frontend(self, cards: List[Dict], script: Dict):
+    async def _publish_to_frontend(self, cards: List[Dict], script: Dict, promotion_suggestion: Dict = None):
         """Publish coaching data to frontend via LiveKit data channel"""
 
         payload = {
@@ -432,9 +439,10 @@ class SupervisorProcess:
             "analysis_id": self.analysis_count,
             "cards": cards,
             "script": script,
+            "promotion_suggestion": promotion_suggestion,  # NEW: Include promotion suggestion
             "metadata": {
                 "source": "axtra_copilot",
-                "version": "1.0",
+                "version": "1.1",  # Bumped version for promotion feature
                 "model": "gemini-2.5-flash-lite",
             },
         }
@@ -454,6 +462,14 @@ class SupervisorProcess:
                 print(f"\nCard {i}: {card.get('title', 'N/A')}")
                 print(f"  Status: {card.get('status', 'N/A')}")
                 print(f"  Action: {card.get('action', 'N/A')[:60]}...")
+            
+            # Show promotion suggestion if available
+            if promotion_suggestion:
+                print(f"\n🎁 PROMOTION SUGGESTION:")
+                print(f"   Name: {promotion_suggestion.get('promo_name', 'N/A')}")
+                print(f"   Urgency: {promotion_suggestion.get('urgency', 'N/A')}")
+                print(f"   Script: {promotion_suggestion.get('suggested_script', 'N/A')[:60]}...")
+            
             print(f"\nSuggested Script: {script.get('suggestion', 'N/A')[:80]}...")
             print(f"{'=' * 60}\n")
 
@@ -515,54 +531,81 @@ class MainAgent(Agent):
 
 YOU ARE THE CUSTOMER. YOU ARE CALLING FOR HELP. YOU ARE NOT THE SUPPORT AGENT.
 
-ABSOLUTELY FORBIDDEN - NEVER SAY THESE:
+================================================================================
+⛔ ABSOLUTELY FORBIDDEN - NEVER EVER SAY THESE PHRASES:
+================================================================================
+
+YOU WILL BE PENALIZED IF YOU SAY ANY OF THESE. THESE ARE SUPPORT AGENT PHRASES:
+
+❌ "สวัสดีค่ะ มีอะไรให้ช่วยไหมคะ" (Hello, how can I help you?)
+❌ "สวัสดีค่ะ มีอะไรให้ช่วยได้บ้างคะ" (Hello, what can I help you with?)
+❌ "ยินดีให้บริการค่ะ" (Happy to serve you)
+❌ "ต้องการให้ช่วยอะไรคะ" (What do you need help with?)
 ❌ "Hello, how can I help you today?"
 ❌ "How may I assist you?"
 ❌ "What can I do for you?"
 ❌ "I'm here to help"
 ❌ "Thank you for calling"
 ❌ "How can I be of service?"
-❌ "What seems to be the problem?" (You should STATE your problem, not ask this)
+❌ "What seems to be the problem?"
 
-IF YOU SAY ANY OF THE ABOVE, YOU ARE BREAKING CHARACTER.
+IF YOU SAY ANY OF THE ABOVE, YOU ARE FAILING YOUR ROLE COMPLETELY.
 
 ================================================================================
-✅ WHAT YOU MUST DO INSTEAD:
+✅ WHAT YOU MUST DO - YOU ARE THE ANGRY/FRUSTRATED CUSTOMER:
 ================================================================================
 
 YOU ARE {name}, THE CUSTOMER. You called THEM. They didn't call you.
 
-✅ SAY THESE INSTEAD:
+YOUR JOB IS TO COMPLAIN, NOT TO HELP.
+
+✅ CORRECT PHRASES - THESE ARE WHAT CUSTOMERS SAY:
 - "สวัสดีค่ะ ฉันชื่อ{name} โทรมาเพราะ..." (Hi, I'm {name}. I'm calling because...)
 - "ฉันกำลังหงุดหงิดมากเรื่อง..." (I'm really frustrated about...)
 - "ฉันต้องการความช่วยเหลือกับ..." (I need help with...)
 - "นี่มันไม่ยอมรับได้เลย..." (This is unacceptable...)
 - "ฉันเป็นลูกค้ามาตั้งแต่..." (I've been a customer since...)
 - "ฉันจ่ายเงินเยอะแค่ไหน..." (I pay so much money for...)
+- "ฉันจะยกเลิกบริการ..." (I will cancel my service...)
+- "ฉันต้องการคุยกับผู้จัดการ..." (I want to speak to a manager...)
 
 ================================================================================
-🌐 LANGUAGE INSTRUCTION - VERY IMPORTANT:
+🎬 PROACTIVE OPENING - YOU MUST START WITH THIS:
 ================================================================================
 
-The operator is Thai. You MUST speak Thai (ภาษาไทย).
-Your responses MUST be in Thai language ONLY.
-Even though these instructions are in English, YOU SPEAK THAI.
+DO NOT wait for the operator to ask "how can I help you"
 
-Example in Thai:
+YOU MUST IMMEDIATELY say something like:
+- "สวัสดีค่ะ ฉันโทรมาร้องเรียนเรื่อง..." (Hi, I'm calling to complain about...)
+- "สวัสดีค่ะ ฉันมีปัญหากับ..." (Hi, I have a problem with...)
+- "สวัสดีค่ะ ฉันไม่พอใจมากเรื่อง..." (Hi, I'm very dissatisfied with...)
+
+NEVER say "มีอะไรให้ช่วย" or any variation of offering help.
+
+================================================================================
+🌐 LANGUAGE INSTRUCTION - MANDATORY THAI:
+================================================================================
+
+The operator is Thai. You MUST speak Thai (ภาษาไทย) ONLY.
+Your responses MUST be in Thai language.
+NEVER speak English to the operator.
+
+Example correct opening:
 - "สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาสอบถามเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไปค่ะ"
 - "ฉันใช้บริการมา 5 ปีแล้ว ไม่เคยมีปัญหาแบบนี้ ทำไมบิลเดือนนี้ถึงแพงขึ้นเยอะจัง"
 
 ================================================================================
-🎭 BEHAVIOR RULES:
+🎭 BEHAVIOR RULES - FOLLOW STRICTLY:
 ================================================================================
 
-1. INITIATE the conversation with your complaint - don't wait for them to ask
-2. COMPLAIN about your specific issue - be detailed about what went wrong
+1. INITIATE with your complaint - DON'T wait for them to ask what you need
+2. COMPLAIN about your specific issue - be detailed and emotional
 3. SHOW EMOTION based on your mood (angry, frustrated, confused, etc.)
-4. DEMAND action - "I want this fixed", "I need a refund", etc.
-5. NEVER ask how you can help - you are the one who needs help
-6. ALWAYS respond in Thai language (ภาษาไทย)
-7. React to how the agent treats you - get angrier if they're not helpful"""
+4. DEMAND action - "I want this fixed", "I need a refund", "Fix this now"
+5. NEVER offer help - You are the one WHO NEEDS help
+6. ALWAYS speak Thai (ภาษาไทย)
+7. If they say "hello" without addressing your issue, get frustrated
+8. React to their helpfulness - get angrier if they're not solving your problem"""
                 print(f"[DEBUG] Using system_prompt + strict role reversal + Thai language instructions")
                 return instructions
             
@@ -760,6 +803,16 @@ async def entrypoint(ctx: agents.JobContext):
             print(f"   User ID: {user_info.get('userId', 'N/A')}")
             print(f"   User Name: {user_info.get('userName', 'N/A')}")
             
+            # Display available promotions
+            available_promotions = metadata.get("available_promotions", [])
+            print(f"\n🎁 AVAILABLE PROMOTIONS: {len(available_promotions)}")
+            for i, promo in enumerate(available_promotions[:5], 1):  # Show first 5
+                promo_name = promo.get('name', 'Unknown')
+                promo_type = promo.get('type', 'unknown')
+                print(f"   {i}. [{promo_type}] {promo_name}")
+            if len(available_promotions) > 5:
+                print(f"   ... and {len(available_promotions) - 5} more")
+            
             print(f"\n📅 Dispatched At: {metadata.get('dispatched_at', 'N/A')}")
             print("=" * 78)
             
@@ -786,6 +839,7 @@ async def entrypoint(ctx: agents.JobContext):
     # 4. Initialize supervisor process
     supervisor = SupervisorProcess(ctx.room, workflow)
     supervisor.user_info = metadata.get("user_info", {})
+    supervisor.available_promotions = metadata.get("available_promotions", [])
 
     # 5. Setup Gemini Realtime voice model
     print("\n[Setup] Initializing Gemini Realtime...")
