@@ -339,6 +339,74 @@ export const SCHEMA = {
       FOREIGN KEY (human_qa_review_id) REFERENCES human_qa_reviews(id) ON DELETE CASCADE
     )
   `,
+
+  // General Promotions (public campaigns)
+  general_promotions: `
+    CREATE TABLE IF NOT EXISTS general_promotions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      name_th TEXT,
+      description TEXT NOT NULL,
+      description_th TEXT,
+      promo_code TEXT,
+      discount_type TEXT NOT NULL CHECK(discount_type IN ('percentage', 'fixed_amount', 'free_shipping', 'free_gift', 'points_bonus')),
+      discount_value INTEGER,
+      max_discount_amount INTEGER,
+      min_order_amount INTEGER DEFAULT 0,
+      usage_limit_total INTEGER,
+      usage_limit_per_user INTEGER DEFAULT 1,
+      usage_count INTEGER DEFAULT 0,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'paused', 'expired', 'disabled')),
+      display_priority INTEGER DEFAULT 0,
+      banner_image_url TEXT,
+      terms_and_conditions TEXT,
+      terms_and_conditions_th TEXT,
+      copilot_suggestion_enabled BOOLEAN DEFAULT 0,
+      copilot_trigger_keywords TEXT, -- JSON array
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+
+  // Personal Promotions (targeted offers)
+  personal_promotions: `
+    CREATE TABLE IF NOT EXISTS personal_promotions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      name_th TEXT,
+      description TEXT NOT NULL,
+      description_th TEXT,
+      discount_type TEXT NOT NULL CHECK(discount_type IN ('percentage', 'fixed_amount', 'free_shipping', 'free_gift', 'points_bonus', 'tier_upgrade')),
+      discount_value INTEGER,
+      max_discount_amount INTEGER,
+      benefits_summary TEXT, -- JSON object
+      target_tiers TEXT, -- JSON array
+      target_min_tenure_months INTEGER,
+      target_max_tenure_months INTEGER,
+      target_account_age_years INTEGER,
+      trigger_type TEXT NOT NULL DEFAULT 'manual' CHECK(trigger_type IN ('manual', 'auto_escalation', 'auto_churn_risk', 'auto_birthday', 'auto_anniversary', 'auto_inactive')),
+      trigger_conditions TEXT, -- JSON object
+      auto_apply BOOLEAN DEFAULT 0,
+      require_operator_approval BOOLEAN DEFAULT 1,
+      usage_limit_total INTEGER,
+      usage_limit_per_user INTEGER DEFAULT 1,
+      usage_count INTEGER DEFAULT 0,
+      start_date TEXT NOT NULL,
+      end_date TEXT,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'paused', 'expired', 'disabled')),
+      display_priority INTEGER DEFAULT 0,
+      notification_message TEXT,
+      notification_message_th TEXT,
+      copilot_card_title TEXT,
+      copilot_card_title_th TEXT,
+      copilot_suggestion_script TEXT,
+      copilot_suggestion_script_th TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
 };
 
 // Indexes for query performance
@@ -399,6 +467,23 @@ const INDEXES = [
   {
     name: 'idx_human_qa_comments_review',
     sql: `CREATE INDEX IF NOT EXISTS idx_human_qa_comments_review ON human_qa_comments(human_qa_review_id)`
+  },
+  // Offers indexes
+  {
+    name: 'idx_general_promotions_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_general_promotions_status ON general_promotions(status)`
+  },
+  {
+    name: 'idx_general_promotions_priority',
+    sql: `CREATE INDEX IF NOT EXISTS idx_general_promotions_priority ON general_promotions(display_priority DESC)`
+  },
+  {
+    name: 'idx_personal_promotions_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_personal_promotions_status ON personal_promotions(status)`
+  },
+  {
+    name: 'idx_personal_promotions_priority',
+    sql: `CREATE INDEX IF NOT EXISTS idx_personal_promotions_priority ON personal_promotions(display_priority DESC)`
   },
   // Note: This index is created after migrations in initDatabase
 ];
@@ -524,6 +609,10 @@ export async function initDatabase(): Promise<void> {
     console.log('  Seeding QA criteria...');
     await seedQACriteria();
     
+    // Seed sample promotions
+    console.log('  Seeding sample promotions...');
+    await seedSamplePromotions();
+    
     console.log('✅ Database initialized successfully');
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
@@ -627,5 +716,237 @@ export async function seedQACriteria(): Promise<void> {
     }
   } catch (error) {
     console.error('[Database] Error seeding QA criteria:', error);
+  }
+}
+
+/**
+ * Seed sample promotions for development/testing
+ */
+export async function seedSamplePromotions(): Promise<void> {
+  try {
+    // Check if general promotions exist
+    const generalResult = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM general_promotions',
+      args: []
+    });
+    
+    const generalCount = (generalResult.rows[0]?.count as number) || 0;
+    
+    if (generalCount === 0) {
+      const now = new Date();
+      const oneMonthLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      
+      // Insert sample general promotions
+      const generalPromos = [
+        {
+          id: 'promo_the1_5th',
+          name: 'The 1 5th Anniversary',
+          name_th: 'ฉลองครบรอบ 5 ปี The 1',
+          description: 'Celebrate with exclusive rewards: ฿4,300 in coupons, bonus points, and status extension for The 1 members.',
+          description_th: 'ฉลองด้วยรางวัลพิเศษ: คูปอง 4,300 บาท คะแนนพิเศษ และต่ออายุสถานะสำหรับสมาชิก The 1',
+          promo_code: 'THE1-5TH-ANNIVERSARY',
+          discount_type: 'percentage',
+          discount_value: 15,
+          max_discount_amount: 1000,
+          min_order_amount: 500,
+          usage_limit_total: 10000,
+          usage_limit_per_user: 1,
+          start_date: now.toISOString(),
+          end_date: oneMonthLater.toISOString(),
+          status: 'active',
+          display_priority: 100,
+          copilot_suggestion_enabled: 1,
+          copilot_trigger_keywords: JSON.stringify(['anniversary', 'promotion', 'the 1', 'coupon'])
+        },
+        {
+          id: 'promo_welcome_new',
+          name: 'New Member Welcome',
+          name_th: 'ต้อนรับสมาชิกใหม่',
+          description: 'Special 20% discount for new members on their first purchase.',
+          description_th: 'ส่วนลดพิเศษ 20% สำหรับสมาชิกใหม่ในการซื้อครั้งแรก',
+          promo_code: 'WELCOME20',
+          discount_type: 'percentage',
+          discount_value: 20,
+          max_discount_amount: 500,
+          min_order_amount: 300,
+          usage_limit_total: null,
+          usage_limit_per_user: 1,
+          start_date: now.toISOString(),
+          end_date: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          display_priority: 90,
+          copilot_suggestion_enabled: 1,
+          copilot_trigger_keywords: JSON.stringify(['new member', 'first purchase', 'welcome'])
+        },
+        {
+          id: 'promo_free_ship',
+          name: 'Free Shipping Campaign',
+          name_th: 'แคมเปญส่งฟรี',
+          description: 'Free shipping on orders over ฿1,000.',
+          description_th: 'ส่งฟรีสำหรับการสั่งซื้อ 1,000 บาทขึ้นไป',
+          promo_code: 'FREESHIP',
+          discount_type: 'free_shipping',
+          discount_value: null,
+          max_discount_amount: null,
+          min_order_amount: 1000,
+          usage_limit_total: 5000,
+          usage_limit_per_user: 3,
+          start_date: now.toISOString(),
+          end_date: oneMonthLater.toISOString(),
+          status: 'active',
+          display_priority: 80,
+          copilot_suggestion_enabled: 0,
+          copilot_trigger_keywords: JSON.stringify(['shipping', 'delivery'])
+        }
+      ];
+      
+      for (const p of generalPromos) {
+        await db.execute({
+          sql: `
+            INSERT INTO general_promotions (
+              id, name, name_th, description, description_th, promo_code, discount_type,
+              discount_value, max_discount_amount, min_order_amount, usage_limit_total,
+              usage_limit_per_user, start_date, end_date, status, display_priority,
+              copilot_suggestion_enabled, copilot_trigger_keywords, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          `,
+          args: [
+            p.id, p.name, p.name_th, p.description, p.description_th, p.promo_code,
+            p.discount_type, p.discount_value, p.max_discount_amount, p.min_order_amount,
+            p.usage_limit_total, p.usage_limit_per_user, p.start_date, p.end_date,
+            p.status, p.display_priority, p.copilot_suggestion_enabled, p.copilot_trigger_keywords
+          ]
+        });
+      }
+      
+      console.log('[Database] Seeded 3 sample general promotions');
+    }
+    
+    // Check if personal promotions exist
+    const personalResult = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM personal_promotions',
+      args: []
+    });
+    
+    const personalCount = (personalResult.rows[0]?.count as number) || 0;
+    
+    if (personalCount === 0) {
+      const now = new Date();
+      
+      // Insert sample personal promotions
+      const personalPromos = [
+        {
+          id: 'personal_gold_retention',
+          name: 'Gold Member Retention Offer',
+          name_th: 'ข้อเสนอรักษาสมาชิก Gold',
+          description: 'Exclusive 15% discount + 5,000 bonus points for Gold members at risk of churning.',
+          description_th: 'ส่วนลดพิเศษ 15% + คะแนนพิเศษ 5,000 คะแนนสำหรับสมาชิก Gold ที่มีความเสี่ยงลด',
+          discount_type: 'percentage',
+          discount_value: 15,
+          max_discount_amount: 2000,
+          benefits_summary: JSON.stringify({
+            discount_percent: 15,
+            extra_points: 5000,
+            tier_extension_months: 6
+          }),
+          target_tiers: JSON.stringify(['Gold']),
+          target_min_tenure_months: 12,
+          trigger_type: 'auto_churn_risk',
+          auto_apply: 0,
+          require_operator_approval: 1,
+          usage_limit_total: null,
+          usage_limit_per_user: 1,
+          start_date: now.toISOString(),
+          status: 'active',
+          display_priority: 100,
+          copilot_card_title: 'Retention Offer Available',
+          copilot_card_title_th: 'มีข้อเสนอรักษาสมาชิก',
+          copilot_suggestion_script: 'I see you\'re a valued Gold member. I\'d like to offer you a special 15% discount and 5,000 bonus points as our appreciation for your loyalty.',
+          copilot_suggestion_script_th: 'ฉันเห็นว่าคุณเป็นสมาชิก Gold ที่มีค่า ฉันขอเสนอส่วนลดพิเศษ 15% และคะแนนพิเศษ 5,000 คะแนนเพื่อแสดงความขอบคุณสำหรับความภักดีของคุณ'
+        },
+        {
+          id: 'personal_5year_milestone',
+          name: '5-Year Milestone Reward',
+          name_th: 'รางวัลครบรอบ 5 ปี',
+          description: '฿500 credit reward for members who have been with us for 5+ years.',
+          description_th: 'เครดิตรางวัล 500 บาทสำหรับสมาชิกที่อยู่กับเรามา 5 ปีขึ้นไป',
+          discount_type: 'fixed_amount',
+          discount_value: 500,
+          max_discount_amount: null,
+          benefits_summary: JSON.stringify({
+            discount_amount: 500,
+            welcome_gift: true
+          }),
+          target_tiers: JSON.stringify(['Silver', 'Gold', 'Platinum']),
+          target_min_tenure_months: 60,
+          trigger_type: 'auto_anniversary',
+          auto_apply: 1,
+          require_operator_approval: 0,
+          usage_limit_total: null,
+          usage_limit_per_user: 1,
+          start_date: now.toISOString(),
+          status: 'active',
+          display_priority: 90,
+          copilot_card_title: 'Milestone Anniversary',
+          copilot_card_title_th: 'ครบรอบสำคัญ',
+          copilot_suggestion_script: 'Congratulations on your 5-year anniversary with us! As a thank you, we\'ve credited ฿500 to your account.',
+          copilot_suggestion_script_th: 'ขอแสดงความยินดีกับครบรอบ 5 ปีของคุณกับเรา! เพื่อเป็นการขอบคุณ เราได้เครดิต 500 บาทเข้าบัญชีของคุณแล้ว'
+        },
+        {
+          id: 'personal_escalation_offer',
+          name: 'Service Recovery Offer',
+          name_th: 'ข้อเสนอชดเชยบริการ',
+          description: 'Automatic offer for customers who escalate complaints.',
+          description_th: 'ข้อเสนออัตโนมัติสำหรับลูกค้าที่ยื่นข้อร้องเรียน',
+          discount_type: 'points_bonus',
+          discount_value: 2000,
+          max_discount_amount: null,
+          benefits_summary: JSON.stringify({
+            extra_points: 2000,
+            free_shipping_months: true
+          }),
+          target_tiers: JSON.stringify(['All']),
+          trigger_type: 'auto_escalation',
+          auto_apply: 0,
+          require_operator_approval: 1,
+          usage_limit_total: null,
+          usage_limit_per_user: 1,
+          start_date: now.toISOString(),
+          status: 'active',
+          display_priority: 95,
+          copilot_card_title: 'Escalation Compensation',
+          copilot_card_title_th: 'การชดเชยสำหรับข้อร้องเรียน',
+          copilot_suggestion_script: 'I sincerely apologize for the inconvenience. I\'d like to offer you 2,000 bonus points and free shipping for the next month as compensation.',
+          copilot_suggestion_script_th: 'ฉันขออภัยอย่างสุดซึ้งสำหรับความไม่สะดวก ฉันขอเสนอคะแนนพิเศษ 2,000 คะแนนและส่งฟรีสำหรับเดือนหน้าเป็นการชดเชย'
+        }
+      ];
+      
+      for (const p of personalPromos) {
+        await db.execute({
+          sql: `
+            INSERT INTO personal_promotions (
+              id, name, name_th, description, description_th, discount_type, discount_value,
+              max_discount_amount, benefits_summary, target_tiers, target_min_tenure_months,
+              trigger_type, auto_apply, require_operator_approval, usage_limit_total,
+              usage_limit_per_user, start_date, status, display_priority, copilot_card_title,
+              copilot_card_title_th, copilot_suggestion_script, copilot_suggestion_script_th,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          `,
+          args: [
+            p.id, p.name, p.name_th, p.description, p.description_th, p.discount_type,
+            p.discount_value, p.max_discount_amount, p.benefits_summary, p.target_tiers,
+            p.target_min_tenure_months, p.trigger_type, p.auto_apply, p.require_operator_approval,
+            p.usage_limit_total, p.usage_limit_per_user, p.start_date, p.status,
+            p.display_priority, p.copilot_card_title, p.copilot_card_title_th,
+            p.copilot_suggestion_script, p.copilot_suggestion_script_th
+          ]
+        });
+      }
+      
+      console.log('[Database] Seeded 3 sample personal promotions');
+    }
+  } catch (error) {
+    console.error('[Database] Error seeding sample promotions:', error);
   }
 }

@@ -96,15 +96,21 @@ class ConversationManager:
         self.analysis_done = False
         self.user_info: Dict = {}
 
-    def add_turn(self, speaker: str, text: str) -> Dict:
+    def add_turn(self, speaker_type: str, text: str) -> Dict:
         """
         Add a turn and check if analysis should trigger
+        
+        SPEAKER TYPE STRICT DEFINITION:
+        - "CUSTOMER" = The AI Persona (e.g., Sarah Thompson) who CALLED IN with a problem
+        - "OPERATOR" = The Human Trainee handling the call, answering the phone
+        
         Returns: Dict with should_analyze flag and data if true
         """
 
         turn = {
             "turn_id": self.turn_count + 1,
-            "speaker": speaker,
+            "speaker_type": speaker_type,  # STRICT: "CUSTOMER" or "OPERATOR"
+            "speaker_label": "📞 CUSTOMER (AI Persona)" if speaker_type == "CUSTOMER" else "🎧 OPERATOR (Human Trainee)",
             "text": text,
             "timestamp": datetime.now().isoformat(),
         }
@@ -114,11 +120,18 @@ class ConversationManager:
         self.turn_count += 1
         self.chars_since_analysis += len(text)
 
-        print(f"[ConvManager] Turn {self.turn_count} added ({speaker}): {text[:50]}...")
-        print(
-            f"[ConvManager] Buffer size: {len(self.buffer_since_analysis)} turns, "
-            f"{self.chars_since_analysis} chars"
-        )
+        # Determine who we need to coach
+        last_speaker = self.buffer_since_analysis[-1]["speaker_type"] if self.buffer_since_analysis else None
+        who_needs_to_respond = "OPERATOR" if last_speaker == "CUSTOMER" else "CUSTOMER"
+        
+        print(f"\n[ConvManager] ════════════════════════════════════════════════════")
+        print(f"[ConvManager] TURN {self.turn_count}: {turn['speaker_label']}")
+        print(f"[ConvManager] Text: {text[:80]}...")
+        print(f"[ConvManager] ────────────────────────────────────────────────────")
+        print(f"[ConvManager] LAST SPEAKER: {last_speaker}")
+        print(f"[ConvManager] WHO NEEDS TO RESPOND NOW: {who_needs_to_respond}")
+        print(f"[ConvManager] Buffer: {len(self.buffer_since_analysis)} turns, {self.chars_since_analysis} chars")
+        print(f"[ConvManager] ════════════════════════════════════════════════════\n")
 
         # Check triggers
         return self._check_triggers()
@@ -213,21 +226,43 @@ class ConversationManager:
         )
 
         # Count speakers for debugging
-        customer_turns = sum(1 for t in recent_turns if t.get("speaker") == "Customer")
-        agent_turns = sum(1 for t in recent_turns if t.get("speaker") == "Agent")
-
-        print("\n[ConvManager] Preparing workflow data:")
-        print(f"  Total turns in buffer: {len(self.buffer_since_analysis)}")
-        print(f"  Recent turns (last 6): {len(recent_turns)}")
-        print(f"    - Customer: {customer_turns}")
-        print(f"    - Agent: {agent_turns}")
-        print(f"  Context summaries: {len(self.summaries)}")
+        customer_turns = sum(1 for t in recent_turns if t.get("speaker_type") == "CUSTOMER")
+        operator_turns = sum(1 for t in recent_turns if t.get("speaker_type") == "OPERATOR")
+        
+        # Determine who spoke last and who needs to respond
+        last_turn = recent_turns[-1] if recent_turns else None
+        last_speaker = last_turn.get("speaker_type") if last_turn else None
+        last_speaker_label = last_turn.get("speaker_label") if last_turn else None
+        
+        # COACHING TARGET: The OPERATOR always needs coaching on how to respond to CUSTOMER
+        who_needs_coaching = "OPERATOR"  # We coach the human trainee
+        who_they_are_talking_to = "CUSTOMER"  # The customer is the AI persona
+        
+        print("\n[ConvManager] ════════════════════════════════════════════════════")
+        print("[ConvManager] PREPARING WORKFLOW DATA")
+        print("[ConvManager] ════════════════════════════════════════════════════")
+        print(f"[ConvManager] Total turns in buffer: {len(self.buffer_since_analysis)}")
+        print(f"[ConvManager] Recent turns (last 6): {len(recent_turns)}")
+        print(f"[ConvManager]   - CUSTOMER (AI Persona): {customer_turns}")
+        print(f"[ConvManager]   - OPERATOR (Human Trainee): {operator_turns}")
+        print(f"[ConvManager] ────────────────────────────────────────────────────")
+        print(f"[ConvManager] LAST SPEAKER: {last_speaker_label}")
+        print(f"[ConvManager] WHO NEEDS COACHING: {who_needs_coaching}")
+        print(f"[ConvManager] WHO THEY ARE RESPONDING TO: {who_they_are_talking_to}")
+        print(f"[ConvManager] ════════════════════════════════════════════════════\n")
 
         return {
             "user_info": self.user_info,
             "context_summary": self.summaries.copy(),
             "conversation_data": recent_turns,
             "total_turns": self.turn_count,
+            "coaching_context": {
+                "last_speaker": last_speaker,
+                "last_speaker_label": last_speaker_label,
+                "who_needs_coaching": who_needs_coaching,  # Always OPERATOR
+                "who_they_are_talking_to": who_they_are_talking_to,  # Always CUSTOMER
+                "conversation_flow": f"{last_speaker} spoke last → {who_needs_coaching} needs to respond"
+            }
         }
 
     def on_analysis_complete(self, result: Dict):
@@ -543,58 +578,58 @@ Example in Thai:
             
             instructions = f"""You are {name}, a CUSTOMER calling customer service for help.
 
-🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
-The human speaking to you works at the call center. You are calling THEM.
+            🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
+            The human speaking to you works at the call center. You are calling THEM.
 
-🚫 FORBIDDEN PHRASES - NEVER SAY THESE:
-- "Hello, how can I help you today?"
-- "How may I assist you?"
-- "What can I do for you?"
-- "I'm here to help"
-- "Thank you for calling"
-- "How can I be of service?"
+            🚫 FORBIDDEN PHRASES - NEVER SAY THESE:
+            - "Hello, how can I help you today?"
+            - "How may I assist you?"
+            - "What can I do for you?"
+            - "I'm here to help"
+            - "Thank you for calling"
+            - "How can I be of service?"
 
-✅ CORRECT PHRASES - SAY THESE INSTEAD:
-- "สวัสดีค่ะ ฉันชื่อ{name} โทรมาเพราะ..." (Hi, I'm {name}. I'm calling because...)
-- "ฉันกำลังหงุดหงิดมาก..." (I'm really frustrated...)
-- "ฉันต้องการความช่วยเหลือ..." (I need help...)
+            ✅ CORRECT PHRASES - SAY THESE INSTEAD:
+            - "สวัสดีค่ะ ฉันชื่อ{name} โทรมาเพราะ..." (Hi, I'm {name}. I'm calling because...)
+            - "ฉันกำลังหงุดหงิดมาก..." (I'm really frustrated...)
+            - "ฉันต้องการความช่วยเหลือ..." (I need help...)
 
-Your personality:
-- Initial mood: {mood}
-- Patience level: {patience}
-- Cooperation level: {cooperation}
-- Things that make you angry: {', '.join(triggers) if triggers else 'Being treated poorly'}
-- Things that calm you down: {', '.join(deescalation) if deescalation else 'Being treated with respect'}
+            Your personality:
+            - Initial mood: {mood}
+            - Patience level: {patience}
+            - Cooperation level: {cooperation}
+            - Things that make you angry: {', '.join(triggers) if triggers else 'Being treated poorly'}
+            - Things that calm you down: {', '.join(deescalation) if deescalation else 'Being treated with respect'}
 
-🎭 Behavior rules:
-1. START the conversation with your complaint - don't wait
-2. COMPLAIN about your issue - be specific
-3. SHOW EMOTION based on your mood
-4. DEMAND action - "I want this fixed", "I need a refund"
-5. NEVER ask how you can help - you need help
-6. ALWAYS speak THAI (ภาษาไทย) - the operator is Thai
-7. React to how the agent treats you
+            🎭 Behavior rules:
+            1. START the conversation with your complaint - don't wait
+            2. COMPLAIN about your issue - be specific
+            3. SHOW EMOTION based on your mood
+            4. DEMAND action - "I want this fixed", "I need a refund"
+            5. NEVER ask how you can help - you need help
+            6. ALWAYS speak THAI (ภาษาไทย) - the operator is Thai
+            7. React to how the agent treats you
 
-Example: "สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาร้องเรียนเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไปค่ะ"""
+            Example: "สวัสดีค่ะ ดิฉันชื่อ{name} โทรมาร้องเรียนเรื่องค่าบริการที่ถูกเรียกเก็บมากเกินไปค่ะ"""
             return instructions
-        
+
         # Fallback
         return """You are a customer calling customer service for help.
 
-🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
+        🚨 CRITICAL: You are NOT the support agent. You are the CALLER with a problem.
 
-🚫 NEVER SAY:
-- "How can I help you?"
-- "How may I assist you?"
-- "What can I do for you?"
+        🚫 NEVER SAY:
+        - "How can I help you?"
+        - "How may I assist you?"
+        - "What can I do for you?"
 
-✅ INSTEAD SAY (in Thai):
-- "สวัสดีค่ะ ฉันโทรมาเพราะ..."
-- "ฉันมีปัญหาเรื่อง..."
-- "ฉันต้องการให้ช่วย..."
+        ✅ INSTEAD SAY (in Thai):
+        - "สวัสดีค่ะ ฉันโทรมาเพราะ..."
+        - "ฉันมีปัญหาเรื่อง..."
+        - "ฉันต้องการให้ช่วย..."
 
-🌐 ALWAYS SPEAK THAI (ภาษาไทย).
-The operator speaks Thai. You must respond in Thai language only."""
+        🌐 ALWAYS SPEAK THAI (ภาษาไทย).
+        The operator speaks Thai. You must respond in Thai language only."""
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         """
@@ -606,7 +641,7 @@ The operator speaks Thai. You must respond in Thai language only."""
         print(f"\n[Turn Complete - User]: {text[:100]}...")
 
         # Add to conversation manager and check triggers
-        trigger = self.conv_manager.add_turn("Customer", text)
+        trigger = self.conv_manager.add_turn("CUSTOMER", text)
 
         # If trigger fired, send to supervisor
         if trigger.get("should_analyze"):
@@ -625,7 +660,7 @@ The operator speaks Thai. You must respond in Thai language only."""
             debug_log("AGENT", "on_agent_speech_committed", text)
 
             # Track agent turn (but don't trigger analysis on agent speech)
-            self.conv_manager.add_turn("Agent", text)
+            self.conv_manager.add_turn("OPERATOR", text)
         except Exception as e:
             print(f"[MainAgent] Error in on_agent_speech_committed: {e}")
             debug_log("AGENT", "Error", str(e))
@@ -671,21 +706,69 @@ async def entrypoint(ctx: agents.JobContext):
     Sets up parallel voice + analysis architecture
     """
 
-    print("\n" + "=" * 70)
-    print(" AXTRA COPILOT AGENT STARTING ")
-    print("=" * 70)
-    print(f"Room: {ctx.room.name}")
-
+    print("\n" + "=" * 78)
+    print(" AXTRA COPILOT AGENT - RECEIVED DISPATCH FROM LIVEKIT ")
+    print("=" * 78)
+    print(f"🕐 Timestamp: {datetime.now().isoformat()}")
+    print(f"🏠 Room: {ctx.room.name}")
+    print(f"💼 Job ID: {ctx.job.id}")
+    
     # 1. Parse metadata from job (sent by frontend)
     metadata = {}
     if ctx.job.metadata:
         try:
             metadata = json.loads(ctx.job.metadata)
-            print("\n[Metadata] Received:")
-            for key, value in metadata.items():
-                print(f"  {key}: {value}")
-        except json.JSONDecodeError:
-            print(f"[Metadata] Warning: Could not parse metadata: {ctx.job.metadata}")
+            
+            print("\n" + "=" * 78)
+            print(" 📦 METADATA RECEIVED FROM BACKEND ")
+            print("=" * 78)
+            
+            # Display persona config
+            persona_config = metadata.get("persona_config", {})
+            print("\n🎭 PERSONA CONFIG:")
+            print(f"   ID: {persona_config.get('id', 'N/A')}")
+            print(f"   Name: {persona_config.get('name', 'N/A')}")
+            print(f"   Voice ID: {persona_config.get('voice_id', 'N/A')}")
+            
+            system_prompt = persona_config.get('system_prompt', '')
+            if system_prompt:
+                print(f"   System Prompt: {system_prompt[:200]}...")
+            else:
+                print(f"   System Prompt: (using default)")
+            
+            behavior = persona_config.get('behavior_profile', {})
+            if behavior:
+                print(f"   Behavior Profile:")
+                print(f"      - Initial Mood: {behavior.get('initialMood', 'N/A')}")
+                print(f"      - Patience Level: {behavior.get('patienceLevel', 'N/A')}")
+                print(f"      - Cooperation Level: {behavior.get('cooperationLevel', 'N/A')}")
+                print(f"      - Escalation Triggers: {behavior.get('escalationTriggers', [])}")
+                print(f"      - De-escalation Triggers: {behavior.get('deescalationTriggers', [])}")
+            
+            # Display scenario config
+            scenario_config = metadata.get("scenario_config", {})
+            print("\n🎯 SCENARIO CONFIG:")
+            print(f"   ID: {scenario_config.get('id', 'N/A')}")
+            print(f"   Title: {scenario_config.get('title', 'N/A')}")
+            print(f"   Difficulty: {scenario_config.get('difficulty', 'N/A')}")
+            if scenario_config.get('description'):
+                print(f"   Description: {scenario_config['description'][:100]}...")
+            
+            # Display user info
+            user_info = metadata.get("user_info", {})
+            print("\n👤 OPERATOR INFO (Who we're coaching):")
+            print(f"   User ID: {user_info.get('userId', 'N/A')}")
+            print(f"   User Name: {user_info.get('userName', 'N/A')}")
+            
+            print(f"\n📅 Dispatched At: {metadata.get('dispatched_at', 'N/A')}")
+            print("=" * 78)
+            
+        except json.JSONDecodeError as e:
+            print(f"\n❌ [Metadata] ERROR: Could not parse metadata: {e}")
+            print(f"   Raw metadata: {ctx.job.metadata[:200]}...")
+    else:
+        print("\n⚠️ [Metadata] WARNING: No metadata received!")
+        print("   Agent will use default persona settings.")
 
     # 2. Initialize conversation manager
     conv_manager = ConversationManager()
@@ -737,8 +820,35 @@ async def entrypoint(ctx: agents.JobContext):
 
     # 6. Create main agent with dynamic persona config and LLM
     main_agent = MainAgent(supervisor, conv_manager, persona_config, llm=models)
-    print(f"\n[Setup] MainAgent created with persona: {persona_config.get('name', 'Unknown')}")
-    print(f"[Setup] Instructions preview: {main_agent.instructions[:200]}...")
+    
+    print("\n" + "=" * 78)
+    print(" 🤖 MAIN AGENT INITIALIZED ")
+    print("=" * 78)
+    print(f"\n🎭 Persona Name: {persona_config.get('name', 'Unknown')}")
+    print(f"🎤 Voice: {gemini_voice}")
+    print(f"🌡️ Temperature: 0.6")
+    print(f"🧠 Model: gemini-2.5-flash-native-audio-preview-12-2025")
+    
+    # Show instructions details
+    instructions = main_agent.instructions
+    print(f"\n📋 INSTRUCTIONS CONFIGURED:")
+    print(f"   Length: {len(instructions)} characters")
+    print(f"   Lines: {instructions.count(chr(10)) + 1}")
+    
+    # Check for key elements in instructions
+    has_role_reversal = "CUSTOMER" in instructions and "NOT the support agent" in instructions
+    has_thai = "ภาษาไทย" in instructions or "Thai" in instructions
+    has_forbidden = "FORBIDDEN" in instructions or "NEVER SAY" in instructions
+    
+    print(f"\n✅ Instruction Components:")
+    print(f"   {'✓' if has_role_reversal else '✗'} Role Reversal (Customer vs Support Agent)")
+    print(f"   {'✓' if has_thai else '✗'} Thai Language Requirement")
+    print(f"   {'✓' if has_forbidden else '✗'} Forbidden Phrases List")
+    
+    print(f"\n📝 Instructions Preview (first 300 chars):")
+    print("   " + "\n   ".join(instructions[:300].split("\n")))
+    print("   ...")
+    print("=" * 78)
 
     # Create session (agent already has LLM configured)
     session = AgentSession()
@@ -760,7 +870,7 @@ async def entrypoint(ctx: agents.JobContext):
                 debug_log("USER", "Final Transcript", text)
                 last_user_text = text
                 # Trigger turn tracking directly
-                trigger = conv_manager.add_turn("Customer", text)
+                trigger = conv_manager.add_turn("CUSTOMER", text)
                 if trigger.get("should_analyze"):
                     print(f"[MainAgent] Analysis triggered: {trigger['reason']}")
                     print("[MainAgent] Sending to supervisor queue...")
@@ -781,7 +891,7 @@ async def entrypoint(ctx: agents.JobContext):
             print(f"🤖 [Agent Output]: {text[:100]}...")
             debug_log("AGENT", "Output", text)
             last_agent_text = text
-            conv_manager.add_turn("Agent", text)
+            conv_manager.add_turn("OPERATOR", text)
 
     @session.on("generation_canceled")
     def on_generation_canceled():
@@ -819,7 +929,7 @@ async def entrypoint(ctx: agents.JobContext):
             if text and len(text) > 5:
                 print(f"\n🤖 [Agent Message]: {text[:150]}...")
                 debug_log("AGENT", "Conversation Item Added", text)
-                conv_manager.add_turn("Agent", text)
+                conv_manager.add_turn("OPERATOR", text)
 
     # DEBUG: Log ALL session events to see what's available
     if DEBUG_MODE:

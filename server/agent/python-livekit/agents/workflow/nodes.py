@@ -12,21 +12,36 @@ DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 def debug_log_node(node_name: str, state: State):
     """Log node input data in debug mode"""
     if DEBUG_MODE:
-        print(f"\n{'=' * 60}")
-        print(f"[WORKFLOW NODE] {node_name} - INPUT DATA")
-        print(f"{'=' * 60}")
-        print(f"User Info: {json.dumps(state.get('user_info', {}), indent=2, ensure_ascii=False)}")
-        print(f"\nContext Summary ({len(state.get('context_summary', []))} items):")
-        for i, summary in enumerate(state.get("context_summary", [])[-3:], 1):
-            preview = summary[:100] + "..." if len(summary) > 100 else summary
-            print(f"  {i}. {preview}")
-        print(f"\nConversation Data ({len(state.get('conversation_data', []))} turns):")
-        for turn in state.get("conversation_data", []):
-            speaker = turn.get("speaker", "Unknown")
+        print(f"\n{'=' * 70}")
+        print(f"[WORKFLOW NODE] {node_name}")
+        print(f"{'=' * 70}")
+        
+        # Show coaching context
+        coaching_ctx = state.get("coaching_context", {})
+        if coaching_ctx:
+            print(f"\n🎯 COACHING CONTEXT:")
+            print(f"   Last Speaker: {coaching_ctx.get('last_speaker_label', 'N/A')}")
+            print(f"   Who Needs Coaching: {coaching_ctx.get('who_needs_coaching', 'N/A')}")
+            print(f"   Who They're Talking To: {coaching_ctx.get('who_they_are_talking_to', 'N/A')}")
+            print(f"   Flow: {coaching_ctx.get('conversation_flow', 'N/A')}")
+        
+        print(f"\n👤 Customer Profile:")
+        print(f"   {json.dumps(state.get('user_info', {}), indent=2, ensure_ascii=False)}")
+        
+        print(f"\n💬 Conversation Data ({len(state.get('conversation_data', []))} turns):")
+        for i, turn in enumerate(state.get("conversation_data", []), 1):
+            speaker_type = turn.get("speaker_type", "Unknown")
+            speaker_label = turn.get("speaker_label", speaker_type)
             text = turn.get("text", "")
-            preview = text[:120] + "..." if len(text) > 120 else text
-            print(f"  [{speaker}]: {preview}")
-        print(f"{'=' * 60}\n")
+            preview = text[:100] + "..." if len(text) > 100 else text
+            marker = "👉 " if i == len(state.get("conversation_data", [])) else "   "
+            print(f"{marker}{i}. [{speaker_label}]: {preview}")
+        
+        last_turn = state.get("conversation_data", [])[-1] if state.get("conversation_data") else None
+        if last_turn and coaching_ctx:
+            print(f"\n⚡ LAST SPEAKER: {last_turn.get('speaker_type')} → COACH: {coaching_ctx.get('who_needs_coaching', 'N/A')}")
+        
+        print(f"{'=' * 70}\n")
 
 
 def call_model_card_1(state: State):
@@ -123,28 +138,35 @@ def aggregator_suggest_response(state: State):
     """Call the LLM to Process and Gen Suggest Response"""
 
     if DEBUG_MODE:
-        print(f"\n{'=' * 60}")
-        print("[WORKFLOW NODE] AGGREGATOR - INPUT DATA")
-        print(f"{'=' * 60}")
-        print(
-            f"Card 1 Response: {json.dumps(state.get('llm_card_1_response', {}), indent=2, ensure_ascii=False)}"
-        )
-        print(
-            f"Card 2 Response: {json.dumps(state.get('llm_card_2_response', {}), indent=2, ensure_ascii=False)}"
-        )
-        print(
-            f"Card 3 Response: {json.dumps(state.get('llm_card_3_response', {}), indent=2, ensure_ascii=False)}"
-        )
-        print(
-            f"\nUser Info: {json.dumps(state.get('user_info', {}), indent=2, ensure_ascii=False)}"
-        )
-        print(f"\nConversation Data ({len(state.get('conversation_data', []))} turns):")
-        for turn in state.get("conversation_data", []):
-            speaker = turn.get("speaker", "Unknown")
+        print(f"\n{'=' * 70}")
+        print("[WORKFLOW NODE] AGGREGATOR - FINAL SYNTHESIS")
+        print(f"{'=' * 70}")
+        
+        # Show coaching context clearly
+        coaching_ctx = state.get("coaching_context", {})
+        if coaching_ctx:
+            print(f"\n🎯 COACHING TARGET:")
+            print(f"   Coaching: {coaching_ctx.get('who_needs_coaching', 'N/A')}")
+            print(f"   Responding To: {coaching_ctx.get('who_they_are_talking_to', 'N/A')}")
+            print(f"   Last Speaker Was: {coaching_ctx.get('last_speaker_label', 'N/A')}")
+        
+        print(f"\n📊 CARD RESPONSES:")
+        print(f"   Card 1 (Emotion): {json.dumps(state.get('llm_card_1_response', {}), indent=2, ensure_ascii=False)}")
+        print(f"   Card 2 (Leverage): {json.dumps(state.get('llm_card_2_response', {}), indent=2, ensure_ascii=False)}")
+        print(f"   Card 3 (Strategy): {json.dumps(state.get('llm_card_3_response', {}), indent=2, ensure_ascii=False)}")
+        
+        print(f"\n💬 CONVERSATION FLOW:")
+        for i, turn in enumerate(state.get("conversation_data", []), 1):
+            speaker_label = turn.get("speaker_label", turn.get("speaker_type", "Unknown"))
             text = turn.get("text", "")
-            preview = text[:120] + "..." if len(text) > 120 else text
-            print(f"  [{speaker}]: {preview}")
-        print(f"{'=' * 60}\n")
+            preview = text[:80] + "..." if len(text) > 80 else text
+            print(f"   {i}. {speaker_label}: {preview}")
+        
+        print(f"\n⚡ SYNTHESIS TASK:")
+        print(f"   → Create script for: {coaching_ctx.get('who_needs_coaching', 'N/A')}")
+        print(f"   → To respond to: {coaching_ctx.get('who_they_are_talking_to', 'N/A')}")
+        print(f"   → Based on last message from: {coaching_ctx.get('last_speaker_label', 'N/A')}")
+        print(f"{'=' * 70}\n")
 
     model_response = model_suggest_response.invoke(
         [

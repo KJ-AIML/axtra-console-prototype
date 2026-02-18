@@ -47,3 +47,11 @@ export type {
   ScoringType,
   ReviewedCall,
 } from './useQAStore';
+export { useOfferStore } from './useOfferStore';
+export type {
+  GeneralPromotion,
+  PersonalPromotion,
+  DiscountType,
+  PromotionStatus,
+  TriggerType,
+} from './useOfferStore';

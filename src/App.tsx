@@ -25,6 +25,8 @@ import {
   Insights,
   KnowledgeBase,
   Offers,
+  GeneralPromotionBuilder,
+  PersonalPromotionBuilder,
   Settings,
   DeveloperAPI,
 } from './pages';
@@ -116,6 +118,10 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
             <Route path="/insights" element={<Insights />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />
             <Route path="/offers" element={<Offers />} />
+            <Route path="/offers/general/new" element={<GeneralPromotionBuilder />} />
+            <Route path="/offers/general/:promotionId/edit" element={<GeneralPromotionBuilder />} />
+            <Route path="/offers/personal/new" element={<PersonalPromotionBuilder />} />
+            <Route path="/offers/personal/:promotionId/edit" element={<PersonalPromotionBuilder />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/developer-api" element={<DeveloperAPI />} />
             <Route path="*" element={<Dashboard />} />

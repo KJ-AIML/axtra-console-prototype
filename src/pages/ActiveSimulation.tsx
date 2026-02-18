@@ -358,6 +358,14 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
   const handleStartCall = useCallback(async () => {
     setIsStarting(true);
     
+    console.log('%c╔════════════════════════════════════════════════════════════╗', 'color: #4F46E5; font-weight: bold; font-size: 14px;');
+    console.log('%c║         AXTRA SIMULATION START REQUEST                     ║', 'color: #4F46E5; font-weight: bold; font-size: 14px;');
+    console.log('%c╚════════════════════════════════════════════════════════════╝', 'color: #4F46E5; font-weight: bold; font-size: 14px;');
+    console.log('[Simulation] 🚀 Operator clicked "Start Simulation"');
+    console.log('[Simulation] 📋 Scenario ID:', scenarioId);
+    console.log('[Simulation] 🕐 Timestamp:', new Date().toISOString());
+    console.log('[Simulation] Sending POST /api/simulations/start...');
+    
     try {
       // 1. Start simulation - this dispatches the AI agent
       const simData = await startSimulation(scenarioId);
@@ -366,11 +374,21 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
         throw new Error('Failed to start simulation');
       }
       
-      console.log('[Simulation] Started with dispatch:', simData.dispatchId);
-      console.log('[Simulation] AI Agent:', simData.agentName);
-      console.log('[Simulation] Persona:', simData.persona.name);
+      console.log('%c╔════════════════════════════════════════════════════════════╗', 'color: #10B981; font-weight: bold; font-size: 14px;');
+      console.log('%c║         SIMULATION STARTED SUCCESSFULLY                    ║', 'color: #10B981; font-weight: bold; font-size: 14px;');
+      console.log('%c╚════════════════════════════════════════════════════════════╝', 'color: #10B981; font-weight: bold; font-size: 14px;');
+      console.log('[Simulation] ✅ Dispatch ID:', simData.dispatchId);
+      console.log('[Simulation] 🤖 AI Agent Name:', simData.agentName);
+      console.log('[Simulation] 🎭 Persona:', simData.persona.name, '(ID:', simData.persona.id + ')');
+      console.log('[Simulation] 🎯 Scenario:', simData.scenario.title, '(ID:', simData.scenario.id + ')');
+      console.log('[Simulation] 🏠 Room Name:', simData.roomName);
+      console.log('[Simulation] 📞 Call Session ID:', simData.callSessionId);
+      console.log('[Simulation] 🔑 Token received:', simData.token ? 'Yes (length: ' + simData.token.length + ')' : 'No');
+      console.log('[Simulation] 🔗 LiveKit URL:', simData.url);
+      console.log('[Simulation] ⏱️ Response time:', new Date().toISOString());
       
       // 2. Connect to LiveKit room with the token from dispatch
+      console.log('[Simulation] Connecting to LiveKit room...');
       await connect(scenarioId, {
         token: simData.token,
         url: simData.url,
@@ -378,13 +396,18 @@ const LiveCallPanel = memo<LiveCallPanelProps>(({ scenarioId, scenario }) => {
         callSessionId: simData.callSessionId,
       });
       
+      console.log('[Simulation] ✅ Connected to LiveKit room');
+      
       setShowWelcome(false);
       showSuccess(
         'Connected', 
         `Voice call started with ${simData.persona.name}. The AI agent will join shortly.`
       );
     } catch (err) {
-      console.error('Failed to start simulation:', err);
+      console.log('%c╔════════════════════════════════════════════════════════════╗', 'color: #EF4444; font-weight: bold; font-size: 14px;');
+      console.log('%c║         SIMULATION START FAILED                            ║', 'color: #EF4444; font-weight: bold; font-size: 14px;');
+      console.log('%c╚════════════════════════════════════════════════════════════╝', 'color: #EF4444; font-weight: bold; font-size: 14px;');
+      console.error('[Simulation] ❌ Error:', err);
       showError(
         'Connection failed', 
         err instanceof Error ? err.message : 'Failed to start voice simulation'

@@ -19,5 +19,7 @@ export { default as QAReviewedCalls } from './QAReviewedCalls';
 export { default as Insights } from './Insights';
 export { default as KnowledgeBase } from './KnowledgeBase';
 export { default as Offers } from './Offers';
+export { default as GeneralPromotionBuilder } from './GeneralPromotionBuilder';
+export { default as PersonalPromotionBuilder } from './PersonalPromotionBuilder';
 export { default as Settings } from './Settings';
 export { default as DeveloperAPI } from './DeveloperAPI';

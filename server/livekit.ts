@@ -101,6 +101,8 @@ export async function dispatchAgent(
     userName?: string;
   }
 ): Promise<{ dispatchId: string; agentName: string }> {
+  console.log('\n📡 LIVEKIT DISPATCH: Preparing to dispatch agent...');
+  
   if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL) {
     throw new Error('LiveKit credentials not configured');
   }
@@ -113,7 +115,7 @@ export async function dispatchAgent(
   );
 
   // Build metadata for the agent
-  const metadata = JSON.stringify({
+  const metadataPayload = {
     persona_config: {
       id: personaConfig.id,
       name: personaConfig.name,
@@ -129,9 +131,35 @@ export async function dispatchAgent(
     },
     user_info: userInfo || {},
     dispatched_at: new Date().toISOString(),
-  });
-
+  };
+  
+  const metadata = JSON.stringify(metadataPayload);
+  
+  console.log('\n📦 METADATA PAYLOAD (sent to Python Agent):');
+  console.log('   ┌─ persona_config ─────────────────────────────────────┐');
+  console.log(`   │ id: ${metadataPayload.persona_config.id}`);
+  console.log(`   │ name: ${metadataPayload.persona_config.name}`);
+  console.log(`   │ voice_id: ${metadataPayload.persona_config.voice_id}`);
+  console.log(`   │ system_prompt: ${metadataPayload.persona_config.system_prompt?.substring(0, 100)}...`);
+  console.log(`   │ behavior_profile: ${JSON.stringify(metadataPayload.persona_config.behavior_profile)}`);
+  console.log('   └──────────────────────────────────────────────────────┘');
+  console.log('   ┌─ scenario_config ────────────────────────────────────┐');
+  console.log(`   │ id: ${metadataPayload.scenario_config.id}`);
+  console.log(`   │ title: ${metadataPayload.scenario_config.title}`);
+  console.log(`   │ difficulty: ${metadataPayload.scenario_config.difficulty}`);
+  console.log('   └──────────────────────────────────────────────────────┘');
+  console.log('   ┌─ user_info ──────────────────────────────────────────┐');
+  console.log(`   │ userId: ${metadataPayload.user_info.userId}`);
+  console.log(`   │ userName: ${metadataPayload.user_info.userName}`);
+  console.log('   └──────────────────────────────────────────────────────┘');
+  console.log(`   📅 dispatched_at: ${metadataPayload.dispatched_at}`);
+  console.log(`\n   📏 Metadata size: ${metadata.length} characters`);
+  
   // Dispatch the agent to the room
+  console.log(`\n🚀 Calling LiveKit API to create dispatch...`);
+  console.log(`   Room: ${roomName}`);
+  console.log(`   Agent: axtra-training-agent`);
+  
   const dispatch = await dispatchClient.createDispatch(
     roomName,
     'axtra-training-agent',  // Must match agent_name in Python worker

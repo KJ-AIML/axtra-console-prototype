@@ -97,6 +97,19 @@ import {
   assignPersonaToScenario,
   removePersonaFromScenario,
 } from './personas';
+import {
+  listGeneralPromotions,
+  getGeneralPromotionById,
+  createGeneralPromotion,
+  updateGeneralPromotion,
+  deleteGeneralPromotion,
+  listPersonalPromotions,
+  getPersonalPromotionById,
+  createPersonalPromotion,
+  updatePersonalPromotion,
+  deletePersonalPromotion,
+  getOfferStats,
+} from './offers';
 
 const PORT = process.env.API_PORT || 3001;
 const API_PREFIX = '/api';
@@ -648,13 +661,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         return;
       }
       
+      console.log('\n═══════════════════════════════════════════════════════════════');
+      console.log('  AXTRA BACKEND: SIMULATION START REQUEST');
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+      console.log(`👤 Operator: ${user.name || user.email} (ID: ${user.id})`);
+      
       try {
         const body = await parseBody(req) as { 
           scenarioId: string;
           personaId?: string;
         };
         
+        console.log(`🎯 Scenario ID: ${body.scenarioId}`);
+        console.log(`🎭 Persona ID: ${body.personaId || '(auto-select)'}`);
+        
         if (!body.scenarioId) {
+          console.log('❌ Validation failed: scenarioId is required');
           sendJson(res, 400, { error: 'scenarioId is required' });
           return;
         }
@@ -662,65 +685,112 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         // Get scenario details
         const scenario = await getScenarioById(body.scenarioId);
         if (!scenario) {
+          console.log(`❌ Scenario not found: ${body.scenarioId}`);
           sendJson(res, 404, { error: 'Scenario not found' });
           return;
         }
+        
+        console.log('\n📋 SCENARIO DETAILS:');
+        console.log(`   ID: ${scenario.id}`);
+        console.log(`   Title: ${scenario.title}`);
+        console.log(`   Difficulty: ${scenario.difficulty}`);
+        console.log(`   Description: ${scenario.description?.substring(0, 100) || 'N/A'}...`);
         
         // Get persona details (use specified or get primary for scenario)
         let persona;
         if (body.personaId) {
           const { getPersonaById } = await import('./personas');
           persona = await getPersonaById(body.personaId);
+          console.log(`\n🎭 Using specified persona: ${body.personaId}`);
         } else {
           const { getPrimaryPersonaForScenario } = await import('./personas');
           const primaryPersona = await getPrimaryPersonaForScenario(body.scenarioId);
           persona = primaryPersona;
+          console.log(`\n🎭 Using primary persona for scenario`);
         }
         
         if (!persona) {
+          console.log('❌ No persona available for this scenario');
           sendJson(res, 404, { error: 'No persona available for this scenario' });
           return;
         }
         
+        console.log('\n🎭 PERSONA DETAILS:');
+        console.log(`   ID: ${persona.id}`);
+        console.log(`   Name: ${persona.name}`);
+        console.log(`   Voice ID: ${persona.voiceId || 'default'}`);
+        console.log(`   Tier: ${persona.tier || 'N/A'}`);
+        console.log(`   System Prompt Preview: ${persona.systemPrompt?.substring(0, 200) || 'N/A'}...`);
+        console.log(`   Behavior Profile:`);
+        console.log(JSON.stringify(persona.behaviorProfile, null, 6).split('\n').map((l: string) => '      ' + l).join('\n'));
+        
         // Generate unique room name
         const roomName = generateRoomName(body.scenarioId, user.id);
+        console.log(`\n🏠 Generated Room Name: ${roomName}`);
         
         // Generate token for the user
+        console.log(`\n🔑 Generating LiveKit token...`);
         const tokenData = await generateLiveKitToken({
           roomName,
           participantName: user.name || user.email,
           userId: user.id,
         });
+        console.log(`   ✅ Token generated (length: ${tokenData.token.length})`);
+        console.log(`   🔗 LiveKit URL: ${tokenData.url}`);
+        
+        // Prepare dispatch config
+        const personaConfig = {
+          id: persona.id,
+          name: persona.name,
+          behaviorProfile: persona.behaviorProfile,
+          systemPrompt: persona.systemPrompt || undefined,
+          voiceId: persona.voiceId || undefined,
+        };
+        
+        const scenarioConfig = {
+          id: scenario.id,
+          title: scenario.title,
+          description: scenario.description || undefined,
+          difficulty: scenario.difficulty,
+        };
+        
+        const userInfo = {
+          userId: user.id,
+          userName: user.name || user.email,
+        };
+        
+        console.log('\n📤 PREPARING AGENT DISPATCH:');
+        console.log('   ┌─ Persona Config ─────────────────────────────────────┐');
+        console.log(JSON.stringify(personaConfig, null, 2).split('\n').map((l: string) => '   │ ' + l).join('\n'));
+        console.log('   └──────────────────────────────────────────────────────┘');
+        console.log('   ┌─ Scenario Config ────────────────────────────────────┐');
+        console.log(JSON.stringify(scenarioConfig, null, 2).split('\n').map((l: string) => '   │ ' + l).join('\n'));
+        console.log('   └──────────────────────────────────────────────────────┘');
+        console.log('   ┌─ User Info ──────────────────────────────────────────┐');
+        console.log(JSON.stringify(userInfo, null, 2).split('\n').map((l: string) => '   │ ' + l).join('\n'));
+        console.log('   └──────────────────────────────────────────────────────┘');
         
         // Dispatch AI agent to the room with persona/scenario config
-        const dispatch = await dispatchAgent(
-          roomName,
-          {
-            id: persona.id,
-            name: persona.name,
-            behaviorProfile: persona.behaviorProfile,
-            systemPrompt: persona.systemPrompt || undefined,
-            voiceId: persona.voiceId || undefined,
-          },
-          {
-            id: scenario.id,
-            title: scenario.title,
-            description: scenario.description || undefined,
-            difficulty: scenario.difficulty,
-          },
-          {
-            userId: user.id,
-            userName: user.name || user.email,
-          }
-        );
+        console.log('\n🚀 Dispatching AI agent to LiveKit...');
+        const dispatch = await dispatchAgent(roomName, personaConfig, scenarioConfig, userInfo);
+        
+        console.log('\n✅ AGENT DISPATCHED SUCCESSFULLY:');
+        console.log(`   Dispatch ID: ${dispatch.dispatchId}`);
+        console.log(`   Agent Name: ${dispatch.agentName}`);
         
         // Create call session record
+        console.log(`\n💾 Creating call session record...`);
         const { createCallSession } = await import('./call-sessions');
         const callSession = await createCallSession({
           user_id: user.id,
           scenario_id: body.scenarioId,
           room_name: roomName,
         });
+        console.log(`   ✅ Call Session ID: ${callSession.id}`);
+        
+        console.log('\n═══════════════════════════════════════════════════════════════');
+        console.log('  SIMULATION START COMPLETE - SENDING SUCCESS RESPONSE');
+        console.log('═══════════════════════════════════════════════════════════════\n');
         
         sendJson(res, 200, { 
           success: true, 
@@ -742,7 +812,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           }
         });
       } catch (error) {
-        console.error('Simulation start error:', error);
+        console.log('\n❌ SIMULATION START ERROR:');
+        console.error(error);
+        console.log('═══════════════════════════════════════════════════════════════\n');
         sendJson(res, 500, { error: 'Failed to start simulation' });
       }
       return;
@@ -1937,6 +2009,300 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('Remove persona error:', error);
         sendJson(res, 500, { error: 'Failed to remove persona' });
+      }
+      return;
+    }
+
+    // ============================================
+    // OFFERS & RULES ROUTES
+    // ============================================
+    
+    // Get all general promotions
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'offers' && segments[1] === 'general') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const promotions = await listGeneralPromotions(user.id);
+        sendJson(res, 200, { success: true, data: promotions });
+      } catch (error) {
+        console.error('List general promotions error:', error);
+        sendJson(res, 500, { error: 'Failed to fetch promotions' });
+      }
+      return;
+    }
+    
+    // Get single general promotion
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'general') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      
+      try {
+        const promotion = await getGeneralPromotionById(user.id, promoId);
+        if (!promotion) {
+          sendJson(res, 404, { error: 'Promotion not found' });
+          return;
+        }
+        sendJson(res, 200, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Get general promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to fetch promotion' });
+      }
+      return;
+    }
+    
+    // Create general promotion
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'offers' && segments[1] === 'general') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      
+      try {
+        const promotion = await createGeneralPromotion(user.id, body);
+        sendJson(res, 201, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Create general promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to create promotion' });
+      }
+      return;
+    }
+    
+    // Update general promotion
+    if (method === 'PUT' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'general') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      const body = await parseBody(req);
+      
+      try {
+        const promotion = await updateGeneralPromotion(user.id, promoId, body);
+        sendJson(res, 200, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Update general promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to update promotion' });
+      }
+      return;
+    }
+    
+    // Delete general promotion
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'general') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      
+      try {
+        await deleteGeneralPromotion(user.id, promoId);
+        sendJson(res, 200, { success: true, message: 'Promotion deleted' });
+      } catch (error) {
+        console.error('Delete general promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to delete promotion' });
+      }
+      return;
+    }
+    
+    // Get all personal promotions
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'offers' && segments[1] === 'personal') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const promotions = await listPersonalPromotions(user.id);
+        sendJson(res, 200, { success: true, data: promotions });
+      } catch (error) {
+        console.error('List personal promotions error:', error);
+        sendJson(res, 500, { error: 'Failed to fetch promotions' });
+      }
+      return;
+    }
+    
+    // Get single personal promotion
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'personal') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      
+      try {
+        const promotion = await getPersonalPromotionById(user.id, promoId);
+        if (!promotion) {
+          sendJson(res, 404, { error: 'Promotion not found' });
+          return;
+        }
+        sendJson(res, 200, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Get personal promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to fetch promotion' });
+      }
+      return;
+    }
+    
+    // Create personal promotion
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'offers' && segments[1] === 'personal') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      
+      try {
+        const promotion = await createPersonalPromotion(user.id, body);
+        sendJson(res, 201, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Create personal promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to create promotion' });
+      }
+      return;
+    }
+    
+    // Update personal promotion
+    if (method === 'PUT' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'personal') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      const body = await parseBody(req);
+      
+      try {
+        const promotion = await updatePersonalPromotion(user.id, promoId, body);
+        sendJson(res, 200, { success: true, data: promotion });
+      } catch (error) {
+        console.error('Update personal promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to update promotion' });
+      }
+      return;
+    }
+    
+    // Delete personal promotion
+    if (method === 'DELETE' && segments.length === 3 && segments[0] === 'offers' && segments[1] === 'personal') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const promoId = segments[2];
+      
+      try {
+        await deletePersonalPromotion(user.id, promoId);
+        sendJson(res, 200, { success: true, message: 'Promotion deleted' });
+      } catch (error) {
+        console.error('Delete personal promotion error:', error);
+        sendJson(res, 500, { error: 'Failed to delete promotion' });
+      }
+      return;
+    }
+    
+    // Get offer stats
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'offers' && segments[1] === 'stats') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const stats = await getOfferStats(user.id);
+        sendJson(res, 200, { success: true, data: stats });
+      } catch (error) {
+        console.error('Get offer stats error:', error);
+        sendJson(res, 500, { error: 'Failed to fetch stats' });
       }
       return;
     }
