@@ -825,28 +825,31 @@ export async function publishQAVersion(configId: string, versionId: string): Pro
   const version = await getVersionById(versionId);
   if (!version || String(version.config_id) !== configId) throw new Error('Version not found');
   const tree = buildTree(await readNodes(versionId));
-  if (tree.length === 0) throw new Error('Cannot publish empty criteria');
   
-  // Validate each parent and its children
-  for (const parent of tree) {
-    const children = parent.children || [];
-    if (children.length === 0) throw new Error(`Parent '${parent.title}' must have sub-criteria`);
-    
-    // Children weights must sum to 100 for rollup calculation
-    const childSum = children.reduce((acc, c) => acc + clampPercent(c.weight), 0);
-    if (childSum !== 100) throw new Error(`Children weights under '${parent.title}' must sum to 100 (got ${childSum})`);
-    
-    for (const child of children) {
-      if (child.level !== 1) throw new Error('Only parent/sub hierarchy is supported');
-      if (normalizeScoringType(child.scoring_type) === 'binary' && Number(child.max_score || 1) !== 1) {
-        throw new Error(`Binary sub-criteria '${child.title}' must have max_score=1`);
+  // Allow publishing empty criteria - this is valid for initial setup
+  // where human QA will configure criteria later
+  if (tree.length > 0) {
+    // Validate each parent and its children
+    for (const parent of tree) {
+      const children = parent.children || [];
+      if (children.length === 0) throw new Error(`Parent '${parent.title}' must have sub-criteria`);
+      
+      // Children weights must sum to 100 for rollup calculation
+      const childSum = children.reduce((acc, c) => acc + clampPercent(c.weight), 0);
+      if (childSum !== 100) throw new Error(`Children weights under '${parent.title}' must sum to 100 (got ${childSum})`);
+      
+      for (const child of children) {
+        if (child.level !== 1) throw new Error('Only parent/sub hierarchy is supported');
+        if (normalizeScoringType(child.scoring_type) === 'binary' && Number(child.max_score || 1) !== 1) {
+          throw new Error(`Binary sub-criteria '${child.title}' must have max_score=1`);
+        }
       }
     }
+    
+    // Validate parent weights sum to 100 for overall score calculation
+    const parentSum = tree.reduce((acc, p) => acc + clampPercent(p.weight), 0);
+    if (parentSum !== 100) throw new Error(`Parent weights must sum to 100 for overall calculation (got ${parentSum})`);
   }
-  
-  // Validate parent weights sum to 100 for overall score calculation
-  const parentSum = tree.reduce((acc, p) => acc + clampPercent(p.weight), 0);
-  if (parentSum !== 100) throw new Error(`Parent weights must sum to 100 for overall calculation (got ${parentSum})`);
   const now = new Date().toISOString();
   await db.execute({
     sql: `UPDATE qa_config_versions SET status = 'archived' WHERE config_id = ? AND status = 'published' AND id != ?`,
@@ -1037,6 +1040,13 @@ export async function runAIQAAnalysisV2(
 
   const cfg = await getQAConfigVersion(DEFAULT_CONFIG_ID);
   const leaves: QACriteriaNode[] = cfg.leaves;
+  
+  // Skip AI QA if no criteria are configured
+  if (leaves.length === 0) {
+    console.log(`[AI QA] No criteria configured for config ${DEFAULT_CONFIG_ID}, skipping AI analysis for call ${callId}`);
+    return null;
+  }
+  
   const aiCriteria = leaves.map((leaf) => ({
     id: leaf.id,
     name: leaf.title,

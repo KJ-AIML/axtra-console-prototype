@@ -1773,9 +1773,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           return pubByCode || pubById || null;
         };
 
-        // Apply deletions first
+        // Apply deletions first (only if node exists in current draft)
+        // Note: Nodes already cleared above, so this is mainly for safety
         for (const removedId of removedIds) {
-          const targetNode = findByExternalId(removedId);
+          const targetNode = allNodes.find(
+            (n: any) => String(n.code) === String(removedId) || String(n.id) === String(removedId)
+          );
           if (targetNode) {
             await softDeleteQACriteriaNode('default', workingVersion, String(targetNode.id));
           }
@@ -1936,9 +1939,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         console.error('[QA Bulk Save] Stack:', error.stack);
         // Provide user-friendly error messages for common validation failures
         let message = error.message || 'Failed to bulk save criteria';
-        if (message.includes('Cannot publish empty criteria')) {
-          message = 'You must have at least one criteria. Please add a criteria before saving.';
-        } else if (message.includes('must have sub-criteria')) {
+        if (message.includes('must have sub-criteria')) {
           message = 'Each main criteria must have at least one sub-criteria. The system will auto-create one.';
         } else if (message.includes('must sum to 100')) {
           message = 'Sub-criteria weights must sum to exactly 100% under each main criteria.';
@@ -2074,7 +2075,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           allNodes.find((node: any) => String(node.code) === String(criteriaId)) ||
           allNodes.find((node: any) => String(node.id) === String(criteriaId));
         if (!targetNode) {
-          throw new Error('Criteria node not found');
+          // Node not found - might already be deleted. Return success (idempotent)
+          sendJson(res, 200, { success: true, message: 'Criteria already deleted or not found' });
+          return;
         }
         const parents = workingCfg.tree || [];
         const leaves = parents.flatMap((p: any) => p.children || []);
