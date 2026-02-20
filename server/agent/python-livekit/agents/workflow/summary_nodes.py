@@ -207,22 +207,22 @@ def aggregate_summary_node(state: CallSummaryState) -> Dict[str, Any]:
         print(f"\n{'='*60}")
         print("[SUMMARY NODE] AGGREGATOR")
         print(f"{'='*60}")
-        print(f"Sentiment: {json.dumps(state.get('sentiment_analysis', {}), indent=2)}")
-        print(f"Key Moments: {json.dumps(state.get('key_moments', {}), indent=2)}")
-        print(f"Performance: {json.dumps(state.get('operator_performance', {}), indent=2)}")
+        print(f"Sentiment: {json.dumps(state.get('sentiment_analysis', {}), indent=2, ensure_ascii=False)}")
+        print(f"Key Moments: {json.dumps(state.get('key_moments', {}), indent=2, ensure_ascii=False)}")
+        print(f"Performance: {json.dumps(state.get('operator_performance', {}), indent=2, ensure_ascii=False)}")
         print(f"{'='*60}\n")
     
     try:
         response = model_summary.invoke([
             {"role": "system", "content": SUMMARY_AGGREGATION_PROMPT},
             {"role": "user", "content": f"""SENTIMENT ANALYSIS:
-{json.dumps(state.get('sentiment_analysis', {}), indent=2)}
+{json.dumps(state.get('sentiment_analysis', {}), indent=2, ensure_ascii=False)}
 
 KEY MOMENTS:
-{json.dumps(state.get('key_moments', {}), indent=2)}
+{json.dumps(state.get('key_moments', {}), indent=2, ensure_ascii=False)}
 
 OPERATOR PERFORMANCE:
-{json.dumps(state.get('operator_performance', {}), indent=2)}
+{json.dumps(state.get('operator_performance', {}), indent=2, ensure_ascii=False)}
 
 Create a cohesive call summary for the trainee."""}
         ])

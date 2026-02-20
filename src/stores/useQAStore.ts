@@ -9,6 +9,14 @@ import { apiClient } from '../lib/api-client';
 // Types
 export type ScoringType = 'scale' | 'binary';
 
+export interface QAConfigWeight {
+  id: string;
+  config_id: string;
+  criteria_id: string;
+  weight: number;
+  auto_calculate: boolean;
+}
+
 export interface QACriteria {
   id: string;
   name: string;
@@ -19,6 +27,17 @@ export interface QACriteria {
   weight: number;
   is_required: boolean;
   sort_order: number;
+  // Sub-criteria support
+  parent_criteria_id?: string;
+  level?: number;
+  children?: QACriteria[];
+  config_weight?: QAConfigWeight;
+  calculated_weight?: number;
+}
+
+export interface QACriteriaHierarchy extends QACriteria {
+  children: QACriteriaHierarchy[];
+  calculated_weight: number;
 }
 
 export interface AIQACriteriaScore {
@@ -62,6 +81,21 @@ export interface QAReviewQueueItem {
 }
 
 export interface CompleteQAData {
+  config?: {
+    id: string;
+    code: string;
+    name: string;
+    version: {
+      id: string;
+      config_id: string;
+      version_no: number;
+      status: 'draft' | 'published' | 'archived';
+      published_at?: string | null;
+      created_by?: string | null;
+      created_at: string;
+    };
+  } | null;
+  criteria_tree?: QACriteriaHierarchy[];
   ai_qa: AIQAResult | null;
   human_qa: {
     id: string;
@@ -116,7 +150,10 @@ interface QAState {
   
   // Criteria definitions
   criteria: QACriteria[];
+  criteriaHierarchy: QACriteriaHierarchy[];
   isLoadingCriteria: boolean;
+  configWeights: QAConfigWeight[];
+  isLoadingWeights: boolean;
   
   // Human review form
   humanScores: Record<string, number>;
@@ -129,6 +166,13 @@ interface QAState {
   fetchReviewedCalls: (myReviewsOnly?: boolean) => Promise<void>;
   fetchQAData: (callId: string) => Promise<void>;
   fetchCriteria: () => Promise<void>;
+  fetchCriteriaHierarchy: () => Promise<void>;
+  fetchConfigWeights: (configId?: string) => Promise<void>;
+  saveConfigWeight: (criteriaId: string, weight: number, autoCalculate: boolean, configId?: string) => Promise<boolean>;
+  autoDistributeWeights: (configId?: string) => Promise<boolean>;
+  
+  // Weighted score calculation
+  calculateWeightedScore: (scores: Record<string, number>) => { overall: number; breakdown: Array<{ criteria_id: string; name: string; score: number; weight: number; weighted_score: number }> };
   
   // Form actions
   setHumanScore: (criteriaId: string, score: number) => void;
@@ -160,7 +204,10 @@ export const useQAStore = create<QAState>((set, get) => ({
   qaError: null,
   
   criteria: [],
+  criteriaHierarchy: [],
   isLoadingCriteria: false,
+  configWeights: [],
+  isLoadingWeights: false,
   
   humanScores: {},
   humanComments: {},
@@ -212,7 +259,8 @@ export const useQAStore = create<QAState>((set, get) => ({
       set({ 
         selectedQAData: data, 
         isLoadingQA: false,
-        criteria: data.criteria
+        criteria: data.criteria || [],
+        criteriaHierarchy: data.criteria_tree || []
       });
       
       // Initialize form with existing human review if available
@@ -272,6 +320,146 @@ export const useQAStore = create<QAState>((set, get) => ({
     }
   },
 
+  // Fetch criteria hierarchy (with sub-criteria)
+  fetchCriteriaHierarchy: async () => {
+    set({ isLoadingCriteria: true });
+    
+    try {
+      const response = await apiClient.get('/qa/criteria/hierarchy');
+      set({ criteriaHierarchy: response.data || [], isLoadingCriteria: false });
+    } catch (error) {
+      console.error('Failed to fetch criteria hierarchy:', error);
+      set({ isLoadingCriteria: false });
+    }
+  },
+
+  // Fetch config weights
+  fetchConfigWeights: async (configId = 'default') => {
+    set({ isLoadingWeights: true });
+    
+    try {
+      const response = await apiClient.get(`/qa/weights/${configId}`);
+      set({ configWeights: response.data || [], isLoadingWeights: false });
+    } catch (error) {
+      console.error('Failed to fetch config weights:', error);
+      set({ isLoadingWeights: false });
+    }
+  },
+
+  // Save config weight for a criteria
+  saveConfigWeight: async (criteriaId: string, weight: number, autoCalculate: boolean, configId = 'default') => {
+    try {
+      // Ensure proper types before sending
+      const sanitizedWeight = Math.min(100, Math.max(0, Math.round(Number(weight) || 0)));
+      await apiClient.post(`/qa/weights/${configId}`, {
+        criteria_id: String(criteriaId),
+        weight: sanitizedWeight,
+        auto_calculate: autoCalculate ? true : false
+      });
+      // Refresh weights
+      await get().fetchConfigWeights(configId);
+      return true;
+    } catch (error: any) {
+      console.error('Failed to save config weight:', error);
+      return false;
+    }
+  },
+
+  // Auto-distribute weights equally
+  autoDistributeWeights: async (configId = 'default') => {
+    try {
+      await apiClient.post('/qa/weights/auto-distribute', { config_id: configId });
+      // Refresh weights and hierarchy
+      await get().fetchConfigWeights(configId);
+      await get().fetchCriteriaHierarchy();
+      return true;
+    } catch (error: any) {
+      console.error('Failed to auto-distribute weights:', error);
+      return false;
+    }
+  },
+
+  // Calculate weighted overall score
+  calculateWeightedScore: (scores: Record<string, number>) => {
+    const state = get();
+    const hierarchy = state.criteriaHierarchy;
+    
+    if (hierarchy.length === 0) {
+      // Fallback to simple average if no hierarchy
+      const values = Object.values(scores);
+      const overall = values.length > 0 
+        ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+        : 0;
+      return { overall, breakdown: [] };
+    }
+
+    const breakdown: Array<{ criteria_id: string; name: string; score: number; weight: number; weighted_score: number }> = [];
+    let totalWeight = 0;
+    let weightedSum = 0;
+
+    function processNode(node: QACriteriaHierarchy): number {
+      const score = scores[node.id];
+      
+      // If has children, calculate from them
+      if (node.children && node.children.length > 0) {
+        const childResults = node.children.map(processNode);
+        const childWeightedSum = childResults.reduce((sum, r, i) => {
+          const child = node.children[i];
+          return sum + (r * (child.calculated_weight || 1));
+        }, 0);
+        const childTotalWeight = node.children.reduce((sum, c) => sum + (c.calculated_weight || 1), 0);
+        const aggregatedScore = childTotalWeight > 0 ? childWeightedSum / childTotalWeight : 0;
+        
+        breakdown.push({
+          criteria_id: node.id,
+          name: node.name,
+          score: Math.round(aggregatedScore),
+          weight: node.calculated_weight || 0,
+          weighted_score: aggregatedScore * (node.calculated_weight || 0),
+        });
+        
+        return aggregatedScore;
+      }
+      
+      // Leaf node
+      if (score !== undefined) {
+        const maxScore = node.scoring_type === 'binary' ? 1 : node.max_score;
+        let normalizedScore: number;
+        
+        if (node.scoring_type === 'binary') {
+          normalizedScore = score >= 1 ? 100 : 0;
+        } else {
+          normalizedScore = (score / maxScore) * 100;
+        }
+        
+        const weight = node.calculated_weight || node.weight || 1;
+        const weightedScore = normalizedScore * weight;
+        
+        breakdown.push({
+          criteria_id: node.id,
+          name: node.name,
+          score: Math.round(normalizedScore),
+          weight,
+          weighted_score: weightedScore,
+        });
+        
+        totalWeight += weight;
+        weightedSum += weightedScore;
+        
+        return normalizedScore;
+      }
+      
+      return 0;
+    }
+
+    for (const root of hierarchy) {
+      processNode(root);
+    }
+
+    const overall = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+    return { overall, breakdown };
+  },
+
   // Form actions
   setHumanScore: (criteriaId: string, score: number) => {
     set(state => ({
@@ -319,27 +507,14 @@ export const useQAStore = create<QAState>((set, get) => ({
       };
     });
     
-    // Auto scoring: equal weight across all configured criteria.
-    const normalizedScores = state.criteria.map((c) => {
-      const cs = criteria_scores.find((s) => s.criteria_id === c.id);
-      if (!cs) return 0;
-
-      if (c.scoring_type === 'binary') {
-        return cs.score >= 1 ? 100 : 0;
-      }
-
-      const maxScore = c.max_score || 5;
-      return (cs.score / maxScore) * 100;
-    });
-
-    const overall_score = normalizedScores.length > 0
-      ? Math.round(normalizedScores.reduce((sum, score) => sum + score, 0) / normalizedScores.length)
-      : 0;
+    const overall_score = get().calculateWeightedScore(state.humanScores).overall;
     
     try {
       await apiClient.post('/qa/reviews', {
         call_id: callId,
         overall_score,
+        config_id: state.selectedQAData?.config?.id || 'default',
+        config_version_id: state.selectedQAData?.config?.version?.id,
         general_feedback: state.generalFeedback,
         status,
         criteria_scores,

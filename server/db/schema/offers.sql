@@ -280,7 +280,7 @@ INSERT OR REPLACE INTO general_promotions (
 -- SEED DATA: Personal Promotions
 -- ============================================
 
--- Gold Tier Retention (High LTV, at-risk)
+-- Gold Tier Retention (At-risk Gold members)
 INSERT OR REPLACE INTO personal_promotions (
     id, name, name_th, description, description_th,
     discount_type, discount_value, benefits_summary,
@@ -297,8 +297,8 @@ INSERT OR REPLACE INTO personal_promotions (
     'สิทธิพิเศษสำหรับสมาชิก Gold ที่มีความเสี่ยงยกเลิก เพื่อรักษาฐานลูกค้า',
     'percentage', 15,
     '{"discount_percent": 15, "extra_points": 5000, "free_shipping_6months": true}',
-    '["Gold"]', 12,
-    'auto_escalation', '{"escalation_type": "cancel_request", "ltv_minimum": 50000}', 1, 0,
+    '["Gold", "Platinum"]', 12,
+    'auto_escalation', '{"escalation_type": "cancel_request", "ltv_minimum": 8000}', 1, 0,
     1, '2026-01-01T00:00:00Z', '2026-12-31T23:59:59Z', 'active',
     'Gold Retention: 15% Off + 5,000 pts',
     'รักษาสมาชิก Gold: ลด 15% + 5,000 คะแนน',
@@ -306,7 +306,7 @@ INSERT OR REPLACE INTO personal_promotions (
     'ในฐานะสมาชิก Gold ที่สำคัญของเรา ดิฉันขอเสนอส่วนลด 15% วันนี้ พร้อมรับคะแนนพิเศษ 5,000 คะแนน สิทธิพิเศษนี้มีเฉพาะสมาชิก Gold เท่านั้นค่ะ'
 );
 
--- 5th Year Anniversary (Membership milestone)
+-- 5th Year Anniversary (Membership milestone) - Lowered to 4 years to match seeded personas
 INSERT OR REPLACE INTO personal_promotions (
     id, name, name_th, description, description_th,
     discount_type, discount_value, benefits_summary,
@@ -319,11 +319,11 @@ INSERT OR REPLACE INTO personal_promotions (
     'personal-5year-milestone',
     '5 Year Loyalty Milestone',
     'ฉลองครบรอบ 5 ปีสมาชิก',
-    'Special celebration offer for members with 5+ years of loyalty',
-    'ข้อเสนอพิเศษฉลองครบรอบสำหรับสมาชิกที่อยู่กับเรามา 5 ปี',
+    'Special celebration offer for members with 4+ years of loyalty',
+    'ข้อเสนอพิเศษฉลองครบรอบสำหรับสมาชิกที่อยู่กับเรามา 4 ปีขึ้นไป',
     'fixed_amount', 500,
     '{"discount_amount": 500, "tier_extension_months": 6, "birthday_bonus": true}',
-    '["Silver", "Gold", "Platinum"]', 5,
+    '["Silver", "Gold", "Platinum"]', 4,
     'auto_anniversary', 0, 1,
     1, '2026-01-01T00:00:00Z', 'active',
     '5-Year Milestone: ฿500 Credit',

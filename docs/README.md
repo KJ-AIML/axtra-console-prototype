@@ -35,6 +35,7 @@ Feature-specific guides.
 |----------|-------------|
 | [Voice AI](./03-features/voice-ai/) | LiveKit + AXTRA Copilot |
 | [QA Scoring](./03-features/qa-scoring.md) | Flexible QA with AI comparison |
+| [QA Criteria V2](./03-features/qa-criteria-v2.md) | Versioned hierarchy + publish workflow + legacy bridge |
 | [Call Recording](./03-features/call-recording.md) | Dual-track audio recording |
 | [AI Call Summary](./03-features/ai-call-summary.md) | Post-call AI analysis |
 | [Feature Updates](./03-features/FEATURE_UPDATES.md) | Recent enhancements |

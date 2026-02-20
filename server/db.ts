@@ -254,20 +254,39 @@ export const SCHEMA = {
   `,
   
   // QA Criteria (questions/prompts for AI evaluation)
+  // Supports hierarchical sub-criteria with parent_criteria_id
   qa_criteria: `
     CREATE TABLE IF NOT EXISTS qa_criteria (
       id TEXT PRIMARY KEY,
       config_id TEXT DEFAULT 'default',
+      parent_criteria_id TEXT, -- NULL = main criteria, has value = sub-criteria
       sort_order INTEGER,
       name TEXT NOT NULL,
       description TEXT,
       ai_prompt TEXT NOT NULL,
       scoring_type TEXT DEFAULT 'scale' CHECK(scoring_type IN ('scale', 'binary')),
       max_score INTEGER DEFAULT 5,
-      weight INTEGER DEFAULT 0,
+      weight INTEGER DEFAULT 0, -- Individual weight (0 = auto-calculate)
       is_required BOOLEAN DEFAULT 0,
       is_active BOOLEAN DEFAULT 1,
-      FOREIGN KEY (config_id) REFERENCES qa_config(id)
+      FOREIGN KEY (config_id) REFERENCES qa_config(id),
+      FOREIGN KEY (parent_criteria_id) REFERENCES qa_criteria(id) ON DELETE CASCADE
+    )
+  `,
+  
+  // QA Config Weights - configurable weight overrides at config level
+  qa_config_weights: `
+    CREATE TABLE IF NOT EXISTS qa_config_weights (
+      id TEXT PRIMARY KEY,
+      config_id TEXT DEFAULT 'default',
+      criteria_id TEXT NOT NULL,
+      weight INTEGER NOT NULL DEFAULT 0, -- 0-100
+      auto_calculate BOOLEAN DEFAULT 1, -- if true, weight auto-calculated from sub-criteria
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (config_id) REFERENCES qa_config(id) ON DELETE CASCADE,
+      FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id) ON DELETE CASCADE,
+      UNIQUE(config_id, criteria_id)
     )
   `,
   
@@ -325,6 +344,20 @@ export const SCHEMA = {
       comment TEXT,
       FOREIGN KEY (human_qa_review_id) REFERENCES human_qa_reviews(id) ON DELETE CASCADE,
       FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id)
+    )
+  `,
+  
+  // Sub-criteria Scores - stores scores for nested criteria
+  sub_criteria_scores: `
+    CREATE TABLE IF NOT EXISTS sub_criteria_scores (
+      id TEXT PRIMARY KEY,
+      parent_score_id TEXT NOT NULL, -- references ai_qa_criteria_scores or human_qa_criteria_scores
+      score_type TEXT NOT NULL CHECK(score_type IN ('ai', 'human')),
+      criteria_id TEXT NOT NULL,
+      score INTEGER CHECK(score BETWEEN 1 AND 5),
+      reasoning TEXT,
+      comment TEXT,
+      FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id) ON DELETE CASCADE
     )
   `,
   
@@ -556,6 +589,48 @@ const MIGRATIONS = [
     sql: `ALTER TABLE qa_criteria ADD COLUMN is_active BOOLEAN DEFAULT 1;`,
     fallback: 'Column may already exist'
   },
+  // Add parent_criteria_id for sub-criteria support
+  {
+    name: 'add_qa_criteria_parent_id',
+    sql: `ALTER TABLE qa_criteria ADD COLUMN parent_criteria_id TEXT REFERENCES qa_criteria(id) ON DELETE CASCADE;`,
+    fallback: 'Column may already exist'
+  },
+  // Create qa_config_weights table
+  {
+    name: 'create_qa_config_weights_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS qa_config_weights (
+        id TEXT PRIMARY KEY,
+        config_id TEXT DEFAULT 'default',
+        criteria_id TEXT NOT NULL,
+        weight INTEGER NOT NULL DEFAULT 0,
+        auto_calculate BOOLEAN DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (config_id) REFERENCES qa_config(id) ON DELETE CASCADE,
+        FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id) ON DELETE CASCADE,
+        UNIQUE(config_id, criteria_id)
+      )
+    `,
+    fallback: 'Table may already exist'
+  },
+  // Create sub_criteria_scores table
+  {
+    name: 'create_sub_criteria_scores_table',
+    sql: `
+      CREATE TABLE IF NOT EXISTS sub_criteria_scores (
+        id TEXT PRIMARY KEY,
+        parent_score_id TEXT NOT NULL,
+        score_type TEXT NOT NULL CHECK(score_type IN ('ai', 'human')),
+        criteria_id TEXT NOT NULL,
+        score INTEGER CHECK(score BETWEEN 1 AND 5),
+        reasoning TEXT,
+        comment TEXT,
+        FOREIGN KEY (criteria_id) REFERENCES qa_criteria(id) ON DELETE CASCADE
+      )
+    `,
+    fallback: 'Table may already exist'
+  },
 ];
 
 /**
@@ -605,9 +680,9 @@ export async function initDatabase(): Promise<void> {
       console.log(`    ⏭️  Index 'idx_call_sessions_recording_status' skipped (column may not exist)`);
     }
     
-    // Seed default QA criteria
-    console.log('  Seeding QA criteria...');
-    await seedQACriteria();
+    // Seed default QA criteria (SKIPPED - user will create their own)
+    console.log('  Seeding QA criteria... SKIPPED (user-managed)');
+    // await seedQACriteria();
     
     // Seed sample promotions
     console.log('  Seeding sample promotions...');
@@ -849,7 +924,7 @@ export async function seedSamplePromotions(): Promise<void> {
             extra_points: 5000,
             tier_extension_months: 6
           }),
-          target_tiers: JSON.stringify(['Gold']),
+          target_tiers: JSON.stringify(['Gold', 'Platinum']),
           target_min_tenure_months: 12,
           trigger_type: 'auto_churn_risk',
           auto_apply: 0,
@@ -878,7 +953,7 @@ export async function seedSamplePromotions(): Promise<void> {
             welcome_gift: true
           }),
           target_tiers: JSON.stringify(['Silver', 'Gold', 'Platinum']),
-          target_min_tenure_months: 60,
+          target_min_tenure_months: 48,
           trigger_type: 'auto_anniversary',
           auto_apply: 1,
           require_operator_approval: 0,

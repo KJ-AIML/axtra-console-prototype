@@ -4,6 +4,7 @@ HTTP endpoint for Node.js backend to request AI-powered call summaries
 """
 
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -54,9 +55,21 @@ class SummaryResponse(BaseModel):
 
 # ============== FastAPI App ==============
 
+def configure_console_encoding() -> None:
+    """Ensure Thai text is printed correctly in logs on all platforms."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - preload workflow on startup"""
+    configure_console_encoding()
     print("\n" + "="*70)
     print(" CALL SUMMARY API SERVER STARTING ")
     print("="*70)
@@ -389,6 +402,7 @@ async def analyze_qa(request: QAAnalysisRequest):
 
 def main():
     """Run the API server"""
+    configure_console_encoding()
     port = int(os.getenv("SUMMARY_API_PORT", "8001"))
     host = os.getenv("SUMMARY_API_HOST", "0.0.0.0")
     

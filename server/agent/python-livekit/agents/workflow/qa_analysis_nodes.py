@@ -130,7 +130,7 @@ def aggregate_qa_report_node(state: QAnalysisState) -> Dict[str, Any]:
         print(f"\n{'='*60}")
         print("[QA NODE] AGGREGATOR")
         print(f"{'='*60}")
-        print(f"Criteria Results: {json.dumps(state.get('criteria_results', []), indent=2)[:500]}...")
+        print(f"Criteria Results: {json.dumps(state.get('criteria_results', []), indent=2, ensure_ascii=False)[:500]}...")
         print(f"{'='*60}\n")
     
     metadata = state.get("call_metadata", {})
@@ -147,7 +147,7 @@ def aggregate_qa_report_node(state: QAnalysisState) -> Dict[str, Any]:
     
     try:
         # Build aggregation prompt
-        criteria_results_text = json.dumps(criteria_results, indent=2)
+        criteria_results_text = json.dumps(criteria_results, indent=2, ensure_ascii=False)
         
         prompt = QA_AGGREGATION_PROMPT.format(
             criteria_results=criteria_results_text,

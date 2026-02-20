@@ -469,10 +469,10 @@ export async function completeCallSession(
   // This runs in the background after call is completed
   try {
     // Dynamically import to avoid circular dependency
-    const { runAIQAAnalysis } = await import('./qa-review');
+    const { runAIQAAnalysisV2 } = await import('./qa-review-v2');
     
     // Run without awaiting - let it complete in background
-    runAIQAAnalysis(
+    runAIQAAnalysisV2(
       data.call_id,
       data.transcripts,
       data.coaching_history,

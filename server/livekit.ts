@@ -159,6 +159,8 @@ async function scanAvailablePromotions(
     // Get active personal promotions with FULL criteria matching
     const personalPromos = await listPersonalPromotions(userId);
     
+    console.log(`   Personal Promos in DB: ${personalPromos.length}`);
+    
     for (const promo of personalPromos) {
       if (promo.status !== 'active') continue;
       
@@ -187,7 +189,7 @@ async function scanAvailablePromotions(
       }
       
       // 3. Check Maximum Tenure
-      if (matches && promo.target_max_tenure_months !== undefined) {
+      if (matches && promo.target_max_tenure_months !== undefined && promo.target_max_tenure_months !== null) {
         if (tenure_months > promo.target_max_tenure_months) {
           matches = false;
         } else {
@@ -196,7 +198,7 @@ async function scanAvailablePromotions(
       }
       
       // 4. Check Account Age
-      if (matches && promo.target_account_age_years !== undefined) {
+      if (matches && promo.target_account_age_years !== undefined && promo.target_account_age_years !== null) {
         if (account_age_years < promo.target_account_age_years) {
           matches = false;
         } else {
@@ -208,7 +210,6 @@ async function scanAvailablePromotions(
       // 5. Check Trigger Conditions (LTV, etc.)
       if (matches && promo.trigger_conditions) {
         const conditions = promo.trigger_conditions;
-        
         if (conditions.ltv_minimum !== undefined && ltv > 0) {
           if (ltv < conditions.ltv_minimum) {
             matches = false;

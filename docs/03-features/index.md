@@ -12,6 +12,7 @@ Feature-specific guides for Axtra Console.
 | [AI Call Summary](./ai-call-summary.md) | AI-powered post-call summary generation |
 | [Call Recording](./call-recording.md) | Dual-track audio recording with R2 storage |
 | [QA Scoring](./qa-scoring.md) | Manual quality assurance scoring system |
+| [QA Criteria V2](./qa-criteria-v2.md) | Versioned parent/sub-criteria config with publish workflow |
 
 ---
 

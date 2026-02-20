@@ -1,6 +1,7 @@
 /**
  * QA Review Service
  * Handles AI QA results and human QA reviews
+ * CACHE_BUST: 2026-02-19-v2
  */
 
 import { db } from './db';
@@ -24,6 +25,26 @@ export interface QACriteria {
   weight: number;
   is_required: boolean;
   sort_order: number;
+  // Sub-criteria support
+  parent_criteria_id?: string;
+  level: number; // 0 = main criteria, 1 = sub-criteria, 2 = sub-sub-criteria
+  children?: QACriteria[]; // Nested sub-criteria
+  config_weight?: QAConfigWeight; // Config-level weight override
+}
+
+export interface QAConfigWeight {
+  id: string;
+  config_id: string;
+  criteria_id: string;
+  weight: number; // 0-100
+  auto_calculate: boolean; // If true, auto-calculate from sub-criteria weights
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QACriteriaWithChildren extends QACriteria {
+  children: QACriteriaWithChildren[];
+  calculated_weight: number; // Computed weight (either from config or auto-calculated)
 }
 
 export interface AIQAResult {
@@ -204,6 +225,141 @@ function calculateOverallScore(
   if (normalized.length === 0) return 0;
   const sum = normalized.reduce((acc, value) => acc + value, 0);
   return Math.round(sum / normalized.length);
+}
+
+// ============================================
+// Weighted Score Calculation with Sub-Criteria
+// ============================================
+
+/**
+ * Build hierarchical criteria tree from flat list
+ */
+function buildCriteriaHierarchy(
+  criteria: QACriteria[],
+  weights: Map<string, QAConfigWeight>
+): QACriteriaWithChildren[] {
+  const criteriaMap = new Map<string, QACriteriaWithChildren>();
+  const roots: QACriteriaWithChildren[] = [];
+  
+  // First pass: create all nodes
+  for (const c of criteria) {
+    const configWeight = weights.get(c.id);
+    const calculatedWeight = configWeight?.auto_calculate 
+      ? 0 
+      : (configWeight?.weight ?? c.weight);
+    
+    criteriaMap.set(c.id, {
+      ...c,
+      children: [],
+      calculated_weight: calculatedWeight,
+      config_weight: configWeight,
+    });
+  }
+  
+  // Second pass: build hierarchy
+  for (const c of criteria) {
+    const node = criteriaMap.get(c.id)!;
+    if (c.parent_criteria_id) {
+      const parent = criteriaMap.get(c.parent_criteria_id);
+      if (parent) {
+        parent.children.push(node);
+      }
+    } else {
+      roots.push(node);
+    }
+  }
+  
+  return roots;
+}
+
+/**
+ * Auto-calculate weights for parent criteria based on children
+ * If auto_calculate is true and weight is 0, distribute equally among children
+ */
+function autoCalculateWeights(criteria: QACriteriaWithChildren[]): void {
+  for (const c of criteria) {
+    if (c.children.length > 0) {
+      // Recursively calculate children first
+      autoCalculateWeights(c.children);
+      
+      // If weight is 0 or auto_calculate is true, sum children's weights
+      if (c.calculated_weight === 0 || c.config_weight?.auto_calculate) {
+        const childrenWeight = c.children.reduce((sum, child) => sum + child.calculated_weight, 0);
+        c.calculated_weight = childrenWeight > 0 ? childrenWeight : 0;
+      }
+    } else if (c.calculated_weight === 0) {
+      // Leaf node with no weight - assign default weight of 1
+      c.calculated_weight = 1;
+    }
+  }
+}
+
+/**
+ * Calculate weighted overall score using hierarchy
+ */
+function calculateWeightedOverallScore(
+  scores: Map<string, number>,
+  criteria: QACriteriaWithChildren[]
+): { overall: number; breakdown: Array<{ criteria_id: string; name: string; score: number; weight: number; weighted_score: number }> } {
+  const breakdown: Array<{ criteria_id: string; name: string; score: number; weight: number; weighted_score: number }> = [];
+  let totalWeight = 0;
+  let weightedSum = 0;
+  
+  function processNode(node: QACriteriaWithChildren): number {
+    const score = scores.get(node.id);
+    
+    // If this node has children, calculate from children
+    if (node.children.length > 0) {
+      const childResults = node.children.map(processNode);
+      const childWeightedSum = childResults.reduce((sum, r, i) => {
+        const child = node.children[i];
+        return sum + (r * child.calculated_weight);
+      }, 0);
+      const childTotalWeight = node.children.reduce((sum, c) => sum + c.calculated_weight, 0);
+      const aggregatedScore = childTotalWeight > 0 ? childWeightedSum / childTotalWeight : 0;
+      
+      // Store breakdown for parent
+      if (score !== undefined) {
+        breakdown.push({
+          criteria_id: node.id,
+          name: node.name,
+          score: aggregatedScore,
+          weight: node.calculated_weight,
+          weighted_score: aggregatedScore * node.calculated_weight,
+        });
+      }
+      
+      return aggregatedScore;
+    }
+    
+    // Leaf node - use direct score
+    if (score !== undefined) {
+      const normalizedScore = normalizeLogicalScore(score, node.scoring_type, node.max_score);
+      const weightedScore = normalizedScore * node.calculated_weight;
+      
+      breakdown.push({
+        criteria_id: node.id,
+        name: node.name,
+        score: normalizedScore,
+        weight: node.calculated_weight,
+        weighted_score: weightedScore,
+      });
+      
+      totalWeight += node.calculated_weight;
+      weightedSum += weightedScore;
+      
+      return normalizedScore;
+    }
+    
+    return 0;
+  }
+  
+  for (const root of criteria) {
+    processNode(root);
+  }
+  
+  const overall = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+  return { overall, breakdown };
 }
 
 // ============================================
@@ -433,23 +589,95 @@ export async function getAIQAResult(callId: string): Promise<AIQAResult | null> 
 }
 
 // ============================================
-// QA Criteria Functions
+// QA Criteria Functions (with Sub-Criteria Support)
 // ============================================
 
 /**
- * Get all QA criteria
+ * Get all QA criteria as flat list
  */
 export async function getQACriteria(): Promise<QACriteria[]> {
   const result = await db.execute({
     sql: `
-      SELECT * FROM qa_criteria 
-      WHERE config_id = 'default'
-        AND COALESCE(is_active, 1) = 1
-      ORDER BY sort_order ASC
+      SELECT 
+        qc.*,
+        COALESCE(qcw.weight, qc.weight) as effective_weight,
+        COALESCE(qcw.auto_calculate, 1) as auto_calculate
+      FROM qa_criteria qc
+      LEFT JOIN qa_config_weights qcw ON qc.id = qcw.criteria_id AND qcw.config_id = 'default'
+      WHERE qc.config_id = 'default'
+        AND COALESCE(qc.is_active, 1) = 1
+      ORDER BY qc.sort_order ASC
     `
   });
   
-  return result.rows.map(row => {
+  console.log(`[QAReview] getQACriteria returned ${result.rows.length} rows`);
+  if (result.rows.length > 0) {
+    console.log(`[QAReview] First row:`, JSON.stringify(result.rows[0], null, 2));
+  }
+  
+  return result.rows.map((row, index) => {
+    const scoringType = normalizeScoringType(row.scoring_type);
+    const id = row.id ? String(row.id) : `row-${index}`;
+    if (!row.id) {
+      console.error(`[QAReview] Row ${index} has no id:`, row);
+    }
+    return {
+      id: id,
+      name: row.name as string,
+      description: (row.description as string) || '',
+      ai_prompt: (row.ai_prompt as string) || '',
+      scoring_type: scoringType,
+      max_score: deriveMaxScore(row.scoring_type, scoringType, row.max_score),
+      weight: sanitizeWeight(row.effective_weight),
+      is_required: Boolean(row.is_required),
+      sort_order: Number(row.sort_order) || 0,
+      parent_criteria_id: row.parent_criteria_id ? String(row.parent_criteria_id) : undefined,
+      level: row.parent_criteria_id ? 1 : 0,
+      config_weight: row.auto_calculate !== undefined ? {
+        id: '',
+        config_id: 'default',
+        criteria_id: row.id as string,
+        weight: sanitizeWeight(row.effective_weight),
+        auto_calculate: Boolean(row.auto_calculate),
+        created_at: '',
+        updated_at: '',
+      } : undefined,
+    };
+  });
+}
+
+/**
+ * Get QA criteria as hierarchical tree with calculated weights
+ */
+export async function getQACriteriaHierarchy(): Promise<QACriteriaWithChildren[]> {
+  const [criteriaResult, weightsResult] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT * FROM qa_criteria 
+        WHERE config_id = 'default'
+          AND COALESCE(is_active, 1) = 1
+        ORDER BY sort_order ASC
+      `
+    }),
+    db.execute({
+      sql: `SELECT * FROM qa_config_weights WHERE config_id = 'default'`
+    }),
+  ]);
+  
+  const weights = new Map<string, QAConfigWeight>();
+  for (const row of weightsResult.rows) {
+    weights.set(row.criteria_id as string, {
+      id: row.id as string,
+      config_id: row.config_id as string,
+      criteria_id: row.criteria_id as string,
+      weight: sanitizeWeight(row.weight),
+      auto_calculate: Boolean(row.auto_calculate),
+      created_at: row.created_at as string,
+      updated_at: row.updated_at as string,
+    });
+  }
+  
+  const criteria: QACriteria[] = criteriaResult.rows.map(row => {
     const scoringType = normalizeScoringType(row.scoring_type);
     return {
       id: row.id as string,
@@ -460,13 +688,177 @@ export async function getQACriteria(): Promise<QACriteria[]> {
       max_score: deriveMaxScore(row.scoring_type, scoringType, row.max_score),
       weight: sanitizeWeight(row.weight),
       is_required: Boolean(row.is_required),
-      sort_order: Number(row.sort_order) || 0
+      sort_order: Number(row.sort_order) || 0,
+      parent_criteria_id: row.parent_criteria_id as string | undefined,
+      level: row.parent_criteria_id ? 1 : 0,
     };
   });
+  
+  const hierarchy = buildCriteriaHierarchy(criteria, weights);
+  autoCalculateWeights(hierarchy);
+  
+  return hierarchy;
 }
 
 /**
- * Save or update QA criteria
+ * Get config weights for all criteria
+ */
+export async function getQAConfigWeights(configId: string = 'default'): Promise<QAConfigWeight[]> {
+  const result = await db.execute({
+    sql: `SELECT * FROM qa_config_weights WHERE config_id = ?`,
+    args: [configId]
+  });
+  
+  return result.rows.map(row => ({
+    id: row.id as string,
+    config_id: row.config_id as string,
+    criteria_id: row.criteria_id as string,
+    weight: sanitizeWeight(row.weight),
+    auto_calculate: Boolean(row.auto_calculate),
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+  }));
+}
+
+/**
+ * Save or update config weight for a criteria
+ */
+export async function saveQAConfigWeight(
+  criteriaId: string,
+  weight: number,
+  autoCalculate: boolean,
+  configId: string = 'default'
+): Promise<void> {
+  // Ensure proper types
+  const sanitizedWeight = Math.min(100, Math.max(0, Math.round(Number(weight) || 0)));
+  const autoCalculateInt = autoCalculate ? 1 : 0;
+  const now = new Date().toISOString();
+  
+  // Ensure config exists (to satisfy FK constraint)
+  const configCheck = await db.execute({
+    sql: 'SELECT id FROM qa_config WHERE id = ?',
+    args: [configId]
+  });
+  
+  if (configCheck.rows.length === 0) {
+    // Create the config if it doesn't exist
+    await db.execute({
+      sql: 'INSERT INTO qa_config (id, name, description) VALUES (?, ?, ?)',
+      args: [configId, 'Customer Service QA', 'Standard customer service quality assessment']
+    });
+    console.log(`[QAReview] Created QA config: ${configId}`);
+  }
+  
+  // Verify criteria exists
+  const criteriaCheck = await db.execute({
+    sql: 'SELECT id FROM qa_criteria WHERE id = ?',
+    args: [criteriaId]
+  });
+  
+  if (criteriaCheck.rows.length === 0) {
+    throw new Error(`Criteria '${criteriaId}' not found`);
+  }
+  
+  // Check if weight config exists
+  const existing = await db.execute({
+    sql: 'SELECT id FROM qa_config_weights WHERE config_id = ? AND criteria_id = ?',
+    args: [configId, criteriaId]
+  });
+  
+  if (existing.rows.length > 0) {
+    await db.execute({
+      sql: `
+        UPDATE qa_config_weights 
+        SET weight = ?, auto_calculate = ?, updated_at = ?
+        WHERE config_id = ? AND criteria_id = ?
+      `,
+      args: [sanitizedWeight, autoCalculateInt, now, configId, criteriaId]
+    });
+  } else {
+    await db.execute({
+      sql: `
+        INSERT INTO qa_config_weights (id, config_id, criteria_id, weight, auto_calculate, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [uuidv4(), configId, criteriaId, sanitizedWeight, autoCalculateInt, now, now]
+    });
+  }
+}
+
+/**
+ * Auto-distribute weights equally among criteria at the same level
+ */
+export async function autoDistributeWeights(configId: string = 'default'): Promise<void> {
+  const criteria = await getQACriteria();
+  
+  console.log(`[QAReview] Auto-distributing weights for ${criteria.length} criteria`);
+  
+  if (criteria.length === 0) {
+    throw new Error('No criteria found to distribute weights');
+  }
+  
+  const mainCriteria = criteria.filter(c => !c.parent_criteria_id);
+  const subCriteria = criteria.filter(c => c.parent_criteria_id);
+  
+  console.log(`[QAReview] Main criteria: ${mainCriteria.length}, Sub criteria: ${subCriteria.length}`);
+  
+  if (mainCriteria.length === 0) {
+    throw new Error('No main criteria found');
+  }
+  
+  const weightPerMain = Math.floor(100 / mainCriteria.length);
+  
+  // Distribute main criteria weights
+  for (let i = 0; i < mainCriteria.length; i++) {
+    const c = mainCriteria[i];
+    console.log(`[QAReview] Processing main criteria ${i}:`, c.id, c.name);
+    // Last one gets the remainder to ensure sum = 100
+    const weight = i === mainCriteria.length - 1 
+      ? 100 - (weightPerMain * (mainCriteria.length - 1))
+      : weightPerMain;
+    
+    if (!c.id) {
+      console.error(`[QAReview] Criteria ${i} has no id:`, c);
+      throw new Error(`Criteria at index ${i} has no id`);
+    }
+    
+    await saveQAConfigWeight(String(c.id), Number(weight), true, String(configId));
+  }
+  
+  // For sub-criteria, distribute within each parent
+  const subByParent = new Map<string, QACriteria[]>();
+  for (const c of subCriteria) {
+    const parentId = c.parent_criteria_id!;
+    if (!subByParent.has(parentId)) {
+      subByParent.set(parentId, []);
+    }
+    subByParent.get(parentId)!.push(c);
+  }
+  
+  for (const [parentId, children] of subByParent) {
+    if (children.length === 0) continue;
+    console.log(`[QAReview] Processing ${children.length} sub-criteria for parent ${parentId}`);
+    const weightPerChild = Math.floor(100 / children.length);
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      console.log(`[QAReview] Processing sub-criteria ${i}:`, c.id, c.name);
+      
+      if (!c.id) {
+        console.error(`[QAReview] Sub-criteria ${i} has no id:`, c);
+        throw new Error(`Sub-criteria at index ${i} has no id`);
+      }
+      
+      const weight = i === children.length - 1
+        ? 100 - (weightPerChild * (children.length - 1))
+        : weightPerChild;
+      
+      await saveQAConfigWeight(String(c.id), Number(weight), true, String(configId));
+    }
+  }
+}
+
+/**
+ * Save or update QA criteria (with sub-criteria support)
  * Admin function to configure criteria
  */
 export async function saveQACriteria(data: {
@@ -479,6 +871,7 @@ export async function saveQACriteria(data: {
   weight: number;
   is_required: boolean;
   sort_order: number;
+  parent_criteria_id?: string;
 }): Promise<void> {
   const scoringType = normalizeScoringType(data.scoring_type);
   const maxScore = deriveMaxScore(data.scoring_type, scoringType, data.max_score);
@@ -488,9 +881,21 @@ export async function saveQACriteria(data: {
   const name = (data.name || '').trim();
   const aiPrompt = (data.ai_prompt || '').trim();
   const description = (data.description || '').trim();
+  const parentCriteriaId = data.parent_criteria_id || null;
 
   if (!data.id || !name || !aiPrompt) {
     throw new Error('id, name, and ai_prompt are required');
+  }
+  
+  // Validate parent exists if specified
+  if (parentCriteriaId) {
+    const parentCheck = await db.execute({
+      sql: 'SELECT id FROM qa_criteria WHERE id = ? AND COALESCE(is_active, 1) = 1',
+      args: [parentCriteriaId]
+    });
+    if (parentCheck.rows.length === 0) {
+      throw new Error(`Parent criteria '${parentCriteriaId}' not found`);
+    }
   }
 
   // Check if criteria exists
@@ -511,7 +916,8 @@ export async function saveQACriteria(data: {
         weight = ?,
         is_required = ?,
         is_active = 1,
-        sort_order = ?
+        sort_order = ?,
+        parent_criteria_id = ?
       WHERE id = ?
     `;
     try {
@@ -526,6 +932,7 @@ export async function saveQACriteria(data: {
           weight,
           isRequired ? 1 : 0,
           sortOrder,
+          parentCriteriaId,
           data.id
         ]
       });
@@ -544,6 +951,7 @@ export async function saveQACriteria(data: {
           weight,
           isRequired ? 1 : 0,
           sortOrder,
+          parentCriteriaId,
           data.id
         ]
       });
@@ -551,14 +959,15 @@ export async function saveQACriteria(data: {
   } else {
     // Insert new
     const insertSql = `
-      INSERT INTO qa_criteria (id, config_id, name, description, ai_prompt, scoring_type, max_score, weight, is_required, sort_order)
-      VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO qa_criteria (id, config_id, parent_criteria_id, name, description, ai_prompt, scoring_type, max_score, weight, is_required, sort_order)
+      VALUES (?, 'default', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     try {
       await db.execute({
         sql: insertSql,
         args: [
           data.id,
+          parentCriteriaId,
           name,
           description,
           aiPrompt,
@@ -577,6 +986,7 @@ export async function saveQACriteria(data: {
         sql: insertSql,
         args: [
           data.id,
+          parentCriteriaId,
           name,
           description,
           aiPrompt,

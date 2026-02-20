@@ -78,12 +78,33 @@ import {
   runAIQAAnalysis,
   getAIQAResult,
   getQACriteria,
+  getQACriteriaHierarchy,
+  getQAConfigWeights,
+  saveQAConfigWeight,
+  autoDistributeWeights,
   saveHumanQAReview,
   getHumanQAReviewForCall,
   getQAReviewQueue,
   getCompleteQAData,
   getReviewedCalls,
 } from './qa-review';
+import {
+  initializeQAV2,
+  getQAConfigVersion,
+  listQAConfigVersions,
+  createQADraftVersion,
+  publishQAVersion,
+  upsertQACriteriaNode,
+  softDeleteQACriteriaNode,
+  saveHumanQAReviewV2,
+  getQAReviewQueueV2,
+  getReviewedCallsV2,
+  getCompleteQADataV2,
+  runAIQAAnalysisV2,
+  getQAWeightsV2,
+  saveQAWeightV2,
+  autoDistributeWeightsV2,
+} from './qa-review-v2';
 import {
   initializePersonaTables,
   getAllPersonas,
@@ -1356,6 +1377,149 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // ============================================
     // QA REVIEW ROUTES
     // ============================================
+
+    // Get config version tree
+    // GET /api/qa/configs/:configId/versions
+    if (
+      method === 'GET' &&
+      segments.length === 4 &&
+      segments[0] === 'qa' &&
+      segments[1] === 'configs' &&
+      segments[3] === 'versions'
+    ) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      try {
+        const data = await listQAConfigVersions(segments[2]);
+        sendJson(res, 200, { success: true, data });
+      } catch (error: any) {
+        console.error('List QA config versions error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to list QA config versions' });
+      }
+      return;
+    }
+
+    // Get config version tree
+    // GET /api/qa/configs/:configId/versions/:versionId
+    if (
+      method === 'GET' &&
+      segments.length === 5 &&
+      segments[0] === 'qa' &&
+      segments[1] === 'configs' &&
+      segments[3] === 'versions'
+    ) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      try {
+        const data = await getQAConfigVersion(segments[2], segments[4]);
+        sendJson(res, 200, { success: true, data });
+      } catch (error: any) {
+        console.error('Get QA config version error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to get QA config version' });
+      }
+      return;
+    }
+
+    // Create draft config version (clone latest)
+    // POST /api/qa/configs/:configId/versions
+    if (
+      method === 'POST' &&
+      segments.length === 4 &&
+      segments[0] === 'qa' &&
+      segments[1] === 'configs' &&
+      segments[3] === 'versions'
+    ) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      try {
+        const data = await createQADraftVersion(segments[2], user.id);
+        sendJson(res, 200, { success: true, data });
+      } catch (error: any) {
+        console.error('Create QA draft version error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to create draft version' });
+      }
+      return;
+    }
+
+    // Publish config version
+    // POST /api/qa/configs/:configId/versions/:versionId/publish
+    if (
+      method === 'POST' &&
+      segments.length === 6 &&
+      segments[0] === 'qa' &&
+      segments[1] === 'configs' &&
+      segments[3] === 'versions' &&
+      segments[5] === 'publish'
+    ) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      try {
+        const data = await publishQAVersion(segments[2], segments[4]);
+        sendJson(res, 200, { success: true, data });
+      } catch (error: any) {
+        console.error('Publish QA version error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to publish version' });
+      }
+      return;
+    }
+
+    // Upsert criteria node in a draft version
+    // POST /api/qa/configs/:configId/versions/:versionId/criteria
+    if (
+      method === 'POST' &&
+      segments.length === 6 &&
+      segments[0] === 'qa' &&
+      segments[1] === 'configs' &&
+      segments[3] === 'versions' &&
+      segments[5] === 'criteria'
+    ) {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      const body = await parseBody(req);
+      try {
+        const data = await upsertQACriteriaNode(segments[2], segments[4], body);
+        sendJson(res, 200, { success: true, data });
+      } catch (error: any) {
+        console.error('Upsert QA criteria node error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to upsert criteria node' });
+      }
+      return;
+    }
     
     // Get QA review queue (calls pending human review)
     if (method === 'GET' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'queue') {
@@ -1376,7 +1540,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const offset = query.offset ? parseInt(query.offset as string) : 0;
       
       try {
-        const queue = await getQAReviewQueue(limit, offset);
+        const queue = await getQAReviewQueueV2(limit, offset);
         sendJson(res, 200, { success: true, data: queue });
       } catch (error) {
         console.error('Get QA queue error:', error);
@@ -1405,7 +1569,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const myReviewsOnly = query.my === 'true';
       
       try {
-        const reviewed = await getReviewedCalls(
+        const reviewed = await getReviewedCallsV2(
           myReviewsOnly ? user.id : undefined,
           limit,
           offset
@@ -1435,7 +1599,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const callId = segments[2];
       
       try {
-        const aiResult = await getAIQAResult(callId);
+        const qaData = await getCompleteQADataV2(callId, user.id);
+        const aiResult = qaData.ai_qa;
         
         if (!aiResult) {
           sendJson(res, 404, { error: 'AI QA result not found' });
@@ -1446,6 +1611,44 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       } catch (error) {
         console.error('Get AI QA error:', error);
         sendJson(res, 500, { error: 'Failed to get AI QA result' });
+      }
+      return;
+    }
+
+    // Trigger AI QA analysis manually
+    // POST /api/qa/ai/analyze
+    if (method === 'POST' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'ai' && segments[2] === 'analyze') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+
+      const user = await validateSession(token);
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+
+      const body = await parseBody(req);
+      if (!body.call_id) {
+        sendJson(res, 400, { error: 'call_id is required' });
+        return;
+      }
+
+      try {
+        const callDetails = await getCallDetails(body.call_id);
+        const result = await runAIQAAnalysisV2(
+          body.call_id,
+          callDetails.transcripts,
+          callDetails.coaching,
+          callDetails.session.duration_seconds || 0,
+          callDetails.session.total_turns || callDetails.transcripts.length,
+          body.scenario_type || 'customer_service'
+        );
+        sendJson(res, 200, { success: true, data: result });
+      } catch (error: any) {
+        console.error('Run AI QA V2 error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to run AI QA analysis' });
       }
       return;
     }
@@ -1465,7 +1668,37 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       
       try {
-        const criteria = await getQACriteria();
+        const cfg = await getQAConfigVersion('default');
+        const criteria = (cfg.tree || []).flatMap((parent: any, parentIndex: number) => {
+          const parentExternalId = String(parent.code || parent.id);
+          const parentRow = {
+            id: parentExternalId,
+            name: parent.title,
+            description: parent.detail,
+            ai_prompt: parent.ai_prompt || '',
+            scoring_type: 'scale',
+            max_score: 100,
+            weight: parent.weight || 0,
+            is_required: false,
+            sort_order: parent.sort_order ?? parentIndex,
+            parent_criteria_id: undefined,
+            level: 0,
+          };
+          const childRows = (parent.children || []).map((leaf: any, childIndex: number) => ({
+            id: String(leaf.code || leaf.id),
+            name: leaf.title,
+            description: leaf.detail,
+            ai_prompt: leaf.ai_prompt,
+            scoring_type: leaf.scoring_type || 'scale',
+            max_score: leaf.max_score || 5,
+            weight: leaf.weight || 0,
+            is_required: !!leaf.is_required,
+            sort_order: leaf.sort_order ?? childIndex,
+            parent_criteria_id: parentExternalId,
+            level: 1,
+          }));
+          return [parentRow, ...childRows];
+        });
         sendJson(res, 200, { success: true, data: criteria });
       } catch (error) {
         console.error('Get QA criteria error:', error);
@@ -1474,6 +1707,249 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
     
+    // Save/update QA criteria (admin/config endpoint)
+    if (method === 'POST' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'criteria' && segments[2] === 'bulk') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+
+      const user = await validateSession(token);
+
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+
+      const body = await parseBody(req);
+      const criteriaList = Array.isArray(body.criteria) ? body.criteria : [];
+      const removedIds = Array.isArray(body.removed_ids) ? body.removed_ids.map((id: any) => String(id)) : [];
+      
+      console.log('[QA Bulk Save] Request body:', JSON.stringify({ 
+        criteriaCount: criteriaList.length, 
+        removedCount: removedIds.length,
+        criteria: criteriaList.map((c: any) => ({ id: c.id, name: c.name, parent: c.parent_criteria_id }))
+      }));
+
+      try {
+        console.log('[QA Bulk Save] Starting bulk save with', criteriaList.length, 'criteria,', removedIds.length, 'removals');
+        const workingVersion = (await createQADraftVersion('default', user.id)).version.id;
+        console.log('[QA Bulk Save] Created working version:', workingVersion);
+
+        // Clear all existing nodes from the draft version to start fresh
+        // This prevents duplicates from corrupted published versions
+        console.log('[QA Bulk Save] Clearing existing draft nodes...');
+        await db.execute({
+          sql: `DELETE FROM qa_criteria_nodes WHERE config_version_id = ?`,
+          args: [workingVersion],
+        });
+        console.log('[QA Bulk Save] Draft nodes cleared');
+
+        let workingCfg = await getQAConfigVersion('default', workingVersion);
+        let allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        
+        // Also fetch published version nodes as fallback for looking up parents not in this save batch
+        let publishedCfg;
+        try {
+          publishedCfg = await getQAConfigVersion('default');
+        } catch (e) {
+          // No published version yet
+        }
+        const publishedNodes = (publishedCfg?.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        
+        console.log(`[QA Bulk Save] Draft nodes: ${allNodes.length}, Published nodes: ${publishedNodes.length}`);
+        
+        const findByExternalId = (externalId: string | undefined) => {
+          if (!externalId) return null;
+          // First check draft nodes
+          const byCode = allNodes.find((node: any) => String(node.code) === String(externalId));
+          const byId = allNodes.find((node: any) => String(node.id) === String(externalId));
+          if (byCode || byId) {
+            return byCode || byId;
+          }
+          // Fallback to published nodes
+          const pubByCode = publishedNodes.find((node: any) => String(node.code) === String(externalId));
+          const pubById = publishedNodes.find((node: any) => String(node.id) === String(externalId));
+          return pubByCode || pubById || null;
+        };
+
+        // Apply deletions first
+        for (const removedId of removedIds) {
+          const targetNode = findByExternalId(removedId);
+          if (targetNode) {
+            await softDeleteQACriteriaNode('default', workingVersion, String(targetNode.id));
+          }
+        }
+
+        // Refresh map after deletions
+        workingCfg = await getQAConfigVersion('default', workingVersion);
+        allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+
+        const upsertCompat = async (criteria: any, options?: { forceAsLeaf?: boolean; parentId?: string }) => {
+          const externalId = String(criteria.id || `qc_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
+          const existingNode = findByExternalId(externalId);
+          
+          // Look up parent - first in parentLeafMap (newly created), then in allNodes (existing)
+          let parentNode = criteria.parent_criteria_id ? findByExternalId(String(criteria.parent_criteria_id)) : null;
+          let finalParentId = options?.parentId;
+          
+          if (!finalParentId && criteria.parent_criteria_id) {
+            // Check if parent was just created in this batch
+            const parentFromMap = parentLeafMap.get(criteria.parent_criteria_id);
+            if (parentFromMap) {
+              finalParentId = parentFromMap.parentDbId;
+              console.log(`[QA Bulk Save] Found parent ${criteria.parent_criteria_id} in parentLeafMap: ${finalParentId}`);
+            } else if (parentNode) {
+              finalParentId = String(parentNode.id);
+              console.log(`[QA Bulk Save] Found parent ${criteria.parent_criteria_id} in allNodes: ${finalParentId}`);
+            }
+          }
+
+          if (criteria.parent_criteria_id && !finalParentId) {
+            throw new Error(`Parent not found for criteria '${externalId}' (parent_id: ${criteria.parent_criteria_id})`);
+          }
+
+          const isLeaf = options?.forceAsLeaf || !!criteria.parent_criteria_id;
+          
+          // Only reuse existing node ID if it's from the current draft version (in allNodes)
+          // Don't reuse IDs from published version since we cleared draft nodes
+          const existingNodeInDraft = allNodes.find((n: any) => 
+            String(n.code) === externalId || String(n.id) === externalId
+          );
+          
+          await upsertQACriteriaNode('default', workingVersion, {
+            id: existingNodeInDraft ? String(existingNodeInDraft.id) : undefined,
+            parent_id: finalParentId,
+            level: isLeaf ? 1 : 0,
+            code: externalId,
+            head: isLeaf
+              ? String(parentNode?.title || criteria.parent_head || 'General').trim()
+              : String(criteria.name || criteria.title || 'Criteria').trim(),
+            title: String(criteria.name || criteria.title || '').trim(),
+            detail: String(criteria.description || '').trim(),
+            ai_prompt: String(criteria.ai_prompt || '').trim(),
+            scoring_type: criteria.scoring_type || 'scale',
+            max_score: Number(criteria.max_score || 5),
+            weight: Number(criteria.weight || 0),
+            sort_order: Number(criteria.sort_order || 0),
+            is_required: !!criteria.is_required,
+            is_active: true,
+          } as any);
+          
+          // Refresh to get the actual node ID (especially for newly created nodes)
+          const refreshedCfg = await getQAConfigVersion('default', workingVersion);
+          const refreshedNodes = (refreshedCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+          const createdNode = refreshedNodes.find((n: any) => String(n.code) === externalId);
+          
+          return { externalId, nodeId: createdNode ? String(createdNode.id) : undefined };
+        };
+
+        const parents = criteriaList.filter((c: any) => !c.parent_criteria_id);
+        const children = criteriaList.filter((c: any) => !!c.parent_criteria_id);
+        
+        // Track parent ID mappings for leaf creation
+        const parentLeafMap = new Map<string, { parentDbId: string; criteria: any }>();
+
+        // Upsert parents first so children can map parent ids correctly
+        for (const criteria of parents) {
+          console.log(`[QA Bulk Save] Processing parent: ${criteria.name} (${criteria.id})`);
+          const result = await upsertCompat(criteria);
+          console.log(`[QA Bulk Save] Parent upserted: externalId=${result.externalId}, nodeId=${result.nodeId}`);
+          
+          if (!result.nodeId) {
+            throw new Error(`Failed to create parent criteria '${criteria.name}' - no node ID returned`);
+          }
+          
+          // Store the mapping for leaf creation
+          parentLeafMap.set(criteria.id, { parentDbId: result.nodeId, criteria });
+          workingCfg = await getQAConfigVersion('default', workingVersion);
+          allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        }
+
+        // Track which parents have children provided in the request
+        // This prevents auto-creating duplicate leaves
+        const parentIdsWithChildrenInRequest = new Set(
+          children.map((c: any) => c.parent_criteria_id).filter(Boolean)
+        );
+        console.log('[QA Bulk Save] Parents with children in request:', Array.from(parentIdsWithChildrenInRequest));
+        
+        // Then upsert children
+        for (const criteria of children) {
+          await upsertCompat(criteria);
+          workingCfg = await getQAConfigVersion('default', workingVersion);
+          allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        }
+        
+        // Create leaf children for parents that don't have any children yet
+        // This preserves the user's scoring_type and max_score settings
+        // BUT skip parents that already have children provided in the request
+        console.log('[QA Bulk Save] Creating leaf children for parents without children...');
+        console.log('[QA Bulk Save] ParentLeafMap entries:', Array.from(parentLeafMap.entries()).map(([k, v]) => ({ originalId: k, parentDbId: v.parentDbId, name: v.criteria.name })));
+        
+        for (const [originalId, { parentDbId, criteria }] of parentLeafMap) {
+          if (!parentDbId) {
+            console.error(`[QA Bulk Save] Skipping leaf creation for ${originalId} - no parentDbId`);
+            continue;
+          }
+          
+          // Skip if parent already has children provided in the request
+          if (parentIdsWithChildrenInRequest.has(originalId)) {
+            console.log(`[QA Bulk Save] Parent '${criteria.name}' has children in request, skipping auto-leaf creation`);
+            continue;
+          }
+          
+          const hasChildren = allNodes.some(
+            (n: any) => Number(n.level) === 1 && String(n.parent_id) === String(parentDbId)
+          );
+          
+          console.log(`[QA Bulk Save] Parent '${criteria.name}' (${parentDbId}) hasChildren=${hasChildren}`);
+          
+          if (!hasChildren) {
+            console.log(`[QA Bulk Save] Creating leaf for parent '${criteria.name}' with scoring_type=${criteria.scoring_type}, max_score=${criteria.max_score}`);
+            await upsertCompat(
+              {
+                ...criteria,
+                id: `${originalId}__leaf`,
+                name: criteria.name, // Same name as parent (user sees this as the criteria)
+                weight: 100, // Full weight since it's the only child
+              },
+              { forceAsLeaf: true, parentId: parentDbId }
+            );
+            workingCfg = await getQAConfigVersion('default', workingVersion);
+            allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+          }
+        }
+
+        // Final validation before publish
+        workingCfg = await getQAConfigVersion('default', workingVersion);
+        console.log('[QA Bulk Save] Final tree state:', JSON.stringify(workingCfg.tree?.map((p: any) => ({
+          parent: p.title,
+          children: p.children?.map((c: any) => ({ title: c.title, scoring_type: c.scoring_type, weight: c.weight }))
+        }))));
+
+        console.log('[QA Bulk Save] Publishing version...');
+        await publishQAVersion('default', workingVersion);
+        console.log('[QA Bulk Save] Published successfully');
+        sendJson(res, 200, { success: true, message: 'Criteria saved' });
+      } catch (error: any) {
+        console.error('[QA Bulk Save] Error:', error);
+        console.error('[QA Bulk Save] Stack:', error.stack);
+        // Provide user-friendly error messages for common validation failures
+        let message = error.message || 'Failed to bulk save criteria';
+        if (message.includes('Cannot publish empty criteria')) {
+          message = 'You must have at least one criteria. Please add a criteria before saving.';
+        } else if (message.includes('must have sub-criteria')) {
+          message = 'Each main criteria must have at least one sub-criteria. The system will auto-create one.';
+        } else if (message.includes('must sum to 100')) {
+          message = 'Sub-criteria weights must sum to exactly 100% under each main criteria.';
+        } else if (message.includes('Config') && message.includes('not found')) {
+          message = 'QA configuration not found. Please refresh the page.';
+        }
+        sendJson(res, 400, { error: message });
+      }
+      return;
+    }
+
     // Save/update QA criteria (admin/config endpoint)
     if (method === 'POST' && segments.length === 2 && segments[0] === 'qa' && segments[1] === 'criteria') {
       if (!token) {
@@ -1491,8 +1967,79 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const body = await parseBody(req);
       
       try {
-        const { saveQACriteria } = await import('./qa-review');
-        await saveQACriteria(body);
+        // Legacy compatibility endpoint: always work on a fresh draft cloned from latest
+        // published version to avoid stale/invalid draft state (e.g. orphan nodes).
+        const workingVersion = (await createQADraftVersion('default', user.id)).version.id;
+        const workingCfg = await getQAConfigVersion('default', workingVersion);
+        const allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        const findByExternalId = (externalId: string | undefined) => {
+          if (!externalId) return null;
+          return (
+            allNodes.find((node: any) => String(node.code) === String(externalId)) ||
+            allNodes.find((node: any) => String(node.id) === String(externalId)) ||
+            null
+          );
+        };
+        const existingNode = findByExternalId(body.id);
+        const parentNode = body.parent_criteria_id ? findByExternalId(body.parent_criteria_id) : null;
+        if (body.parent_criteria_id && !parentNode) {
+          throw new Error('Parent not found');
+        }
+        const externalId = String(body.id || `qc_${Date.now()}`);
+        await upsertQACriteriaNode('default', workingVersion, {
+          id: existingNode ? String(existingNode.id) : undefined,
+          parent_id: parentNode ? String(parentNode.id) : null,
+          level: body.parent_criteria_id ? 1 : 0,
+          code: externalId,
+          head: body.parent_criteria_id
+            ? String(parentNode?.title || body.parent_head || 'General').trim()
+            : String(body.name || body.title || 'Criteria').trim(),
+          title: String(body.name || body.title || '').trim(),
+          detail: String(body.description || '').trim(),
+          ai_prompt: String(body.ai_prompt || '').trim(),
+          scoring_type: body.scoring_type || 'scale',
+          max_score: Number(body.max_score || 5),
+          weight: Number(body.weight || 0),
+          sort_order: Number(body.sort_order || 0),
+          is_required: !!body.is_required,
+          is_active: true,
+        } as any);
+
+        // Compatibility bridge for legacy flat UI:
+        // Top-level rows in that UI are intended to be directly scorable.
+        // V2 requires parent + at least one leaf child, so auto-provision one leaf.
+        if (!body.parent_criteria_id) {
+          const refreshed = await getQAConfigVersion('default', workingVersion);
+          const refreshedNodes = (refreshed.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+          const parentForCompat =
+            refreshedNodes.find((node: any) => String(node.code) === externalId && Number(node.level) === 0) ||
+            refreshedNodes.find((node: any) => String(node.id) === externalId && Number(node.level) === 0);
+
+          if (parentForCompat) {
+            const children = refreshedNodes.filter(
+              (node: any) => Number(node.level) === 1 && String(node.parent_id || '') === String(parentForCompat.id)
+            );
+
+            if (children.length === 0) {
+              await upsertQACriteriaNode('default', workingVersion, {
+                parent_id: String(parentForCompat.id),
+                level: 1,
+                code: `${externalId}__leaf`,
+                head: String(parentForCompat.title || body.name || body.title || 'Criteria').trim(),
+                title: String(body.name || body.title || 'Criteria').trim(),
+                detail: String(body.description || '').trim(),
+                ai_prompt: String(body.ai_prompt || '').trim(),
+                scoring_type: body.scoring_type || 'scale',
+                max_score: Number(body.max_score || 5),
+                weight: 100,
+                sort_order: 0,
+                is_required: !!body.is_required,
+                is_active: true,
+              } as any);
+            }
+          }
+        }
+        await publishQAVersion('default', workingVersion);
         sendJson(res, 200, { success: true, message: 'Criteria saved' });
       } catch (error: any) {
         console.error('Save QA criteria error:', error);
@@ -1518,12 +2065,181 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const criteriaId = segments[2];
       
       try {
-        const { deleteQACriteria } = await import('./qa-review');
-        await deleteQACriteria(criteriaId);
+        // Legacy compatibility endpoint: use a fresh draft to avoid operating on
+        // stale drafts that may violate parent/sub invariants.
+        const workingVersion = (await createQADraftVersion('default', user.id)).version.id;
+        const workingCfg = await getQAConfigVersion('default', workingVersion);
+        const allNodes = (workingCfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        const targetNode =
+          allNodes.find((node: any) => String(node.code) === String(criteriaId)) ||
+          allNodes.find((node: any) => String(node.id) === String(criteriaId));
+        if (!targetNode) {
+          throw new Error('Criteria node not found');
+        }
+        const parents = workingCfg.tree || [];
+        const leaves = parents.flatMap((p: any) => p.children || []);
+        const isParent = Number(targetNode.level || 0) === 0;
+        if (isParent && parents.length <= 1) {
+          sendJson(res, 400, { error: 'Cannot delete the last parent criteria' });
+          return;
+        }
+        if (!isParent && leaves.length <= 1) {
+          sendJson(res, 400, { error: 'Cannot delete the last sub-criteria' });
+          return;
+        }
+        await softDeleteQACriteriaNode('default', workingVersion, String(targetNode.id));
+        await publishQAVersion('default', workingVersion);
         sendJson(res, 200, { success: true, message: 'Criteria deleted' });
       } catch (error: any) {
         console.error('Delete QA criteria error:', error);
+        if (String(error?.message || '').includes('Cannot publish empty criteria')) {
+          sendJson(res, 400, { error: 'Cannot delete all criteria. Keep at least one parent with one sub-criteria.' });
+          return;
+        }
         sendJson(res, 500, { error: error.message || 'Failed to delete criteria' });
+      }
+      return;
+    }
+    
+    // Get QA criteria hierarchy (with sub-criteria)
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'criteria' && segments[2] === 'hierarchy') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      try {
+        const cfg = await getQAConfigVersion('default');
+        const hierarchy = (cfg.tree || []).map((parent: any) => ({
+          id: String(parent.code || parent.id),
+          name: parent.title,
+          description: parent.detail,
+          ai_prompt: parent.ai_prompt || '',
+          scoring_type: 'scale',
+          max_score: 100,
+          weight: parent.weight || 0,
+          is_required: false,
+          sort_order: parent.sort_order || 0,
+          parent_criteria_id: undefined,
+          level: 0,
+          calculated_weight: parent.weight || 0,
+          children: (parent.children || []).map((child: any) => ({
+            id: String(child.code || child.id),
+            name: child.title,
+            description: child.detail,
+            ai_prompt: child.ai_prompt || '',
+            scoring_type: child.scoring_type || 'scale',
+            max_score: child.max_score || 5,
+            weight: child.weight || 0,
+            is_required: !!child.is_required,
+            sort_order: child.sort_order || 0,
+            parent_criteria_id: String(parent.code || parent.id),
+            level: 1,
+            calculated_weight: child.weight || 0,
+            children: [],
+          })),
+        }));
+        sendJson(res, 200, { success: true, data: hierarchy });
+      } catch (error) {
+        console.error('Get QA hierarchy error:', error);
+        sendJson(res, 500, { error: 'Failed to get criteria hierarchy' });
+      }
+      return;
+    }
+    
+    // Get QA config weights
+    if (method === 'GET' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'weights') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const configId = segments[2];
+      
+      try {
+        const weights = await getQAWeightsV2(configId);
+        sendJson(res, 200, { success: true, data: weights });
+      } catch (error) {
+        console.error('Get QA weights error:', error);
+        sendJson(res, 500, { error: 'Failed to get config weights' });
+      }
+      return;
+    }
+    
+    // Save QA config weight
+    if (method === 'POST' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'weights') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const configId = segments[2];
+      const body = await parseBody(req);
+      
+      try {
+        const criteriaId = String(body.criteria_id);
+        const weight = Number(body.weight) || 0;
+        const cfg = await getQAConfigVersion(configId);
+        const allNodes = (cfg.tree || []).flatMap((parent: any) => [parent, ...(parent.children || [])]);
+        const targetNode =
+          allNodes.find((node: any) => String(node.code) === criteriaId) ||
+          allNodes.find((node: any) => String(node.id) === criteriaId);
+        if (!targetNode) {
+          throw new Error('Criteria not found');
+        }
+        await saveQAWeightV2(configId, String(targetNode.id), weight);
+        sendJson(res, 200, { success: true, message: 'Weight saved' });
+      } catch (error: any) {
+        console.error('Save QA weight error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to save weight' });
+      }
+      return;
+    }
+    
+    // Auto-distribute QA weights equally
+    if (method === 'POST' && segments.length === 3 && segments[0] === 'qa' && segments[1] === 'weights' && segments[2] === 'auto-distribute') {
+      if (!token) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      
+      const user = await validateSession(token);
+      
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid or expired session' });
+        return;
+      }
+      
+      const body = await parseBody(req);
+      const configId = body.config_id || 'default';
+      
+      try {
+        await autoDistributeWeightsV2(configId);
+        sendJson(res, 200, { success: true, message: 'Weights auto-distributed' });
+      } catch (error: any) {
+        console.error('Auto-distribute weights error:', error);
+        sendJson(res, 500, { error: error.message || 'Failed to auto-distribute weights' });
       }
       return;
     }
@@ -1545,12 +2261,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const body = await parseBody(req);
       
       try {
-        const review = await saveHumanQAReview({
+        const review = await saveHumanQAReviewV2({
           call_id: body.call_id,
           reviewer_id: user.id,
-          overall_score: body.overall_score,
           general_feedback: body.general_feedback,
           status: body.status,
+          config_id: body.config_id || 'default',
+          config_version_id: body.config_version_id,
           criteria_scores: body.criteria_scores,
           comments: body.comments,
         });
@@ -1760,7 +2477,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const callId = segments[1];
       
       try {
-        const qaData = await getCompleteQAData(callId, user.id);
+        const qaData = await getCompleteQADataV2(callId, user.id);
         sendJson(res, 200, { success: true, data: qaData });
       } catch (error) {
         console.error('Get QA data error:', error);
@@ -2402,6 +3119,7 @@ export function apiPlugin() {
       // Initialize database
       try {
         await initDatabase();
+        await initializeQAV2();
         await seedInitialUser();
         await seedDashboardScenarios();
         await seedScenarios(); // Simulation scenarios
@@ -2432,6 +3150,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   (async () => {
     try {
       await initDatabase();
+      await initializeQAV2();
       await seedInitialUser();
       await seedDashboardScenarios();
       await seedScenarios();
