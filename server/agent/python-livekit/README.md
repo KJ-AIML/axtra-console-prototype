@@ -6,21 +6,56 @@ AI-powered voice agent for call center training simulations using LiveKit, Googl
 
 ## Overview
 
-This Python service provides the **AI Agent + AXTRA Copilot** system that connects to LiveKit rooms and engages in realistic voice conversations with trainees. It includes:
+This Python service provides the **AI Agent + AXTRA Copilot** system that connects to LiveKit rooms and engages in realistic voice conversations with trainees. It uses **Explicit Dispatch** - the agent is dispatched on-demand via API call rather than auto-joining rooms.
+
+### Components
 
 1. **Voice Agent**: Real-time voice conversation using Google Gemini Realtime API
 2. **AXTRA Copilot**: Parallel coaching system using LangGraph for 3-card analysis
 
+### Architecture
+
 ```
-┌─────────────────┐      WebRTC       ┌─────────────────┐      WebRTC       ┌─────────────────┐
-│  Axtra Console  │ ◄───────────────► │  LiveKit Cloud  │ ◄───────────────► │   Python Agent  │
-│   (Frontend)    │   (Voice/Audio)   │  (Media Relay)  │   (Voice/Audio)   │  (AXTRA Copilot)│
-│                 │   + Data Channel  │                 │                   │                 │
-│ • React App     │                   │ • Route audio   │                   │ • Auto-joins    │
-│ • Browser mic   │                   │ • Data channel  │                   │ • Gemini LLM    │
-│ • Speaker out   │                   │   routing       │                   │ • LangGraph     │
-│ • Coaching UI   │                   │                 │                   │ • 3-Card Coach  │
-└─────────────────┘                   └─────────────────┘                   └─────────────────┘
+┌─────────────────┐   Dispatch API   ┌─────────────────┐   WebRTC + Data   ┌─────────────────┐
+│  Node.js Backend│ ───────────────► │  LiveKit Cloud  │ ◄───────────────► │   Python Agent  │
+│  POST /dispatch │   (Metadata)     │  (Agent Dispatch│   (Voice/Audio)   │  (AXTRA Copilot)│
+│                 │                  │   + Media Relay)│                   │                 │
+│ • Persona config│                  │                 │                   │ • Receives job  │
+│ • Scenario info │                  │ • Routes to     │                   │ • Parses metadata
+│ • Promotions    │                  │   axtra-training│                   │ • Gemini LLM    │
+│ • User info     │                  │   -agent        │                   │ • LangGraph     │
+└─────────────────┘                  └─────────────────┘                   └─────────────────┘
+        │                                                                         │
+        │        ┌─────────────────┐      WebRTC                                 │
+        └──────► │  Axtra Console  │ ◄─────────────── (Voice + Coaching) ────────┘
+                 │   (Frontend)    │
+                 │                 │
+                 │ • Browser mic   │
+                 │ • Speaker out   │
+                 │ • Coaching UI   │
+                 └─────────────────┘
+```
+
+### Agent Dispatch Flow
+
+```
+1. User clicks "Start Voice Call" in Axtra Console
+   ↓
+2. Frontend requests token from Node.js API (/api/livekit/token)
+   ↓
+3. Frontend connects to LiveKit room
+   ↓
+4. Node.js backend DISPATCHES agent via LiveKit Agent API
+   ↓   (POST to LiveKit with agent_name="axtra-training-agent")
+   ↓   Metadata: {persona_config, scenario_config, user_info, available_promotions}
+   ↓
+5. Python agent receives job with metadata
+   ↓
+6. Agent joins room and starts voice conversation
+   ↓
+7. Parallel coaching analysis runs (LangGraph)
+   ↓
+8. Coaching cards sent to frontend via data channel
 ```
 
 ---
@@ -105,6 +140,9 @@ Context-aware response suggestion considering:
 - [uv](https://github.com/astral-sh/uv) package manager (recommended)
 - LiveKit Cloud account or self-hosted LiveKit server
 - Google API key (for Gemini Realtime API)
+- Node.js backend configured to dispatch agents (see [Integration](#integration-with-axtra-console))
+
+**Important:** This agent uses **Explicit Dispatch** - it does NOT auto-join rooms. The Node.js backend must dispatch the agent via LiveKit's Agent Dispatch API.
 
 ---
 
@@ -153,13 +191,95 @@ DEBUG_MODE=true  # Enable verbose logging
 
 ---
 
+## Agent Configuration
+
+### Agent Name
+
+The agent is registered with a specific name that the Node.js backend uses to dispatch it:
+
+```python
+# In livekit_agent_langchain.py
+agents.cli.run_app(
+    agents.WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name="axtra-training-agent",  # Must match backend dispatch
+    )
+)
+```
+
+**This name must match** the agent name used in the Node.js backend dispatch call.
+
+### Metadata Structure
+
+When the Node.js backend dispatches the agent, it sends metadata that configures the conversation:
+
+```json
+{
+  "persona_config": {
+    "id": "angry-customer-sarah",
+    "name": "Sarah Thompson",
+    "tier": "Gold",
+    "voice_id": "Zephyr",
+    "system_prompt": "Detailed persona instructions...",
+    "behavior_profile": {
+      "initialMood": "angry",
+      "patienceLevel": "low",
+      "cooperationLevel": "medium"
+    }
+  },
+  "scenario_config": {
+    "id": "billing-dispute",
+    "title": "Billing Dispute",
+    "description": "Customer is disputing charges...",
+    "difficulty": "Hard"
+  },
+  "user_info": {
+    "userId": "user-123",
+    "userName": "Agent Trainee"
+  },
+  "available_promotions": [
+    {
+      "id": "promo-1",
+      "type": "personal",
+      "name": "Loyalty Discount 20%",
+      "discount_type": "percentage",
+      "discount_value": 20,
+      "urgency_score": 8
+    }
+  ],
+  "dispatched_at": "2024-01-15T10:30:00Z"
+}
+```
+
+### Metadata Usage
+
+| Field | Used By | Purpose |
+|-------|---------|---------|
+| `persona_config` | Voice Agent | Defines customer personality, voice, behavior |
+| `scenario_config` | Voice Agent | Sets context for the conversation |
+| `user_info` | Supervisor | Identifies the trainee being coached |
+| `available_promotions` | Coaching Cards | Suggests relevant offers during conversation |
+
+---
+
 ## Running the Agent
+
+The agent runs in **Explicit Dispatch** mode - it waits for the Node.js backend to dispatch it to a room. It will NOT auto-join rooms.
 
 ### Development Mode
 
 ```bash
 # Run the agent with auto-reload on code changes
 uv run python livekit_agent_langchain.py dev
+```
+
+You should see output like:
+```
+Starting AXTRA Copilot Agent...
+Mode: Explicit Dispatch (On-Demand)
+Usage: uv run python livekit_agent_langchain.py dev
+
+# Agent is now waiting for dispatch from Node.js backend
 ```
 
 ### Production Mode
@@ -182,17 +302,36 @@ The agent will:
 
 ```
 python-livekit/
-├── livekit_agent_langchain.py  # NEW: Main entry with AXTRA Copilot
-├── livekit_basic_agent.py      # Basic agent (no coaching)
-├── agents/                     # NEW: LangGraph components
+├── livekit_agent_langchain.py  # Main entry point - AXTRA Copilot Agent
+│                               # Registers as "axtra-training-agent"
+│                               # Receives dispatch from Node.js backend
+│
+├── livekit_basic_agent.py      # Basic agent (no coaching) - legacy
+│
+├── api/                        # Python AI Services API (FastAPI)
+│   ├── server.py               # Summary + QA analysis endpoints
+│   └── __init__.py
+│
+├── agents/                     # LangGraph components for coaching
 │   ├── agent_manager/
-│   │   └── agent.py            # Model configuration
+│   │   └── agent.py            # LLM model configuration
 │   ├── prompts/
-│   │   └── agent_prompts.py    # 3-card LLM prompts
+│   │   └── agent_prompts.py    # 3-card coaching prompts
+│   ├── schemas/
+│   │   ├── types.py            # Data types (Promotions, etc.)
+│   │   ├── call_summary_types.py
+│   │   └── qa_types.py
+│   ├── services/
+│   │   └── hierarchical_summary.py
 │   └── workflow/
 │       ├── build.py            # LangGraph workflow builder
-│       └── nodes.py            # Card analysis nodes
+│       ├── nodes.py            # Card analysis nodes
+│       ├── summary_nodes.py    # Call summary workflow
+│       └── qa_analysis_nodes.py # QA scoring workflow
+│
 ├── prompts.py                  # Persona definitions (Thai/English)
+├── run_summary_api.py          # Script to run API server
+├── test_workflow.py            # Workflow testing utilities
 ├── pyproject.toml              # Python dependencies
 ├── uv.lock                     # Locked dependency versions
 ├── .env                        # Environment variables (not in git)
@@ -404,6 +543,46 @@ CALLER_INSTRUCTIONS = """
 
 ## Integration with Axtra Console
 
+### Agent Dispatch Mechanism
+
+The Python agent uses **Explicit Dispatch** via LiveKit's Agent Dispatch API. The Node.js backend dispatches the agent to rooms on-demand.
+
+#### Dispatch Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         AGENT DISPATCH SEQUENCE                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  1. User clicks "Start Voice Call" in Axtra Console                              │
+│     ↓                                                                            │
+│  2. Frontend → POST /api/simulations/:id/start (Node.js backend)                 │
+│     ↓                                                                            │
+│  3. Node.js creates LiveKit room + generates token                               │
+│     ↓                                                                            │
+│  4. Node.js → LiveKit Agent Dispatch API                                         │
+│        AgentDispatchClient.createDispatch(roomName, "axtra-training-agent", {...})
+│        Metadata: {persona_config, scenario_config, user_info, promotions}        │
+│     ↓                                                                            │
+│  5. LiveKit routes dispatch to connected Python agent                            │
+│     ↓                                                                            │
+│  6. Python agent receives job with metadata (entrypoint function)                │
+│     ↓                                                                            │
+│  7. Agent parses metadata, configures persona, joins room                        │
+│     ↓                                                                            │
+│  8. Voice conversation begins (WebRTC via LiveKit)                               │
+│     ↓                                                                            │
+│  9. Supervisor analyzes conversation (LangGraph)                                 │
+│     ↓                                                                            │
+│  10. Coaching data sent via LiveKit data channel                                 │
+│     ↓                                                                            │
+│  11. Frontend displays real-time coaching cards                                  │
+│     ↓                                                                            │
+│  12. User ends call → agent disconnects, ready for next dispatch                 │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Room Naming Convention
 
 ```
@@ -412,29 +591,44 @@ axtra-{scenarioId}-{userId}-{timestamp}
 
 Example: `axtra-billing-dispute-01-abc123-1709123456789`
 
-### Data Flow
+### Node.js Dispatch Code
 
+The Node.js backend uses LiveKit's `AgentDispatchClient` to dispatch the agent:
+
+```typescript
+// In server/livekit.ts
+import { AgentDispatchClient } from 'livekit-server-sdk';
+
+const dispatchClient = new AgentDispatchClient(
+  LIVEKIT_URL,
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET
+);
+
+// Dispatch agent to room
+const dispatch = await dispatchClient.createDispatch(
+  roomName,                    // e.g., "axtra-billing-dispute-01-abc123-..."
+  'axtra-training-agent',      // Must match agent_name in Python worker
+  { 
+    metadata: JSON.stringify({
+      persona_config: { ... },    // Customer personality
+      scenario_config: { ... },   // Training scenario
+      user_info: { ... },         // Trainee info
+      available_promotions: [...] // Relevant offers
+    })
+  }
+);
 ```
-1. User clicks "Start Voice Call" in Axtra Console
-   ↓
-2. Frontend requests token from Node.js API (/api/livekit/token)
-   ↓
-3. Frontend connects to LiveKit room
-   ↓
-4. Python agent detects room, joins automatically
-   ↓
-5. Voice conversation begins (WebRTC via LiveKit)
-   ↓
-6. Supervisor analyzes conversation (LangGraph)
-   ↓
-7. Coaching data sent via LiveKit data channel
-   ↓
-8. Frontend displays real-time coaching cards
-   ↓
-9. User ends call, frontend disconnects
-   ↓
-10. Agent leaves room, ready for next session
-```
+
+### Why Explicit Dispatch?
+
+| Feature | Explicit Dispatch (Current) | Auto-Join (Alternative) |
+|---------|---------------------------|------------------------|
+| **Control** | Backend decides when agent joins | Agent joins any matching room |
+| **Metadata** | Rich metadata passed at dispatch | Limited/no context |
+| **Scalability** | Multiple agent types possible | One agent per room pattern |
+| **Security** | Authenticated dispatch | Anyone can create matching room |
+| **Use Case** | Training scenarios with specific personas | General voice AI assistant |
 
 ### Data Channel Format
 
@@ -468,13 +662,28 @@ Example: `axtra-billing-dispute-01-abc123-1709123456789`
 |-------|----------|
 | "Failed to connect to LiveKit" | Check `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` |
 | "Google API key invalid" | Verify `GOOGLE_API_KEY` is set correctly |
-| Agent not joining rooms | Ensure room name starts with `axtra-` or check agent logs |
+| **Agent not being dispatched** | Ensure Node.js backend is calling `AgentDispatchClient.createDispatch()` with correct `agent_name` |
+| **Agent name mismatch** | Verify `agent_name="axtra-training-agent"` matches in both Python and Node.js code |
+| **No metadata received** | Check that Node.js is passing metadata in the dispatch call |
+| Agent not joining rooms | Agent uses explicit dispatch - it won't auto-join. Check dispatch logs |
 | No audio from agent | Check microphone permissions in browser |
 | Agent responds but no voice | Verify Gemini API has access to realtime models |
 | High latency | Check network connection; Gemini Realtime requires low latency |
 | Coaching cards not appearing | Enable `DEBUG_MODE=true` to trace trigger logic |
 
 ### Debug Checklist
+
+#### Agent Dispatch Issues
+
+If the agent is not joining the room:
+
+1. **Check Python agent is running**: Look for `Starting AXTRA Copilot Agent...` in logs
+2. **Verify agent_name matches**: Both Python (`agent_name="axtra-training-agent"`) and Node.js must use same name
+3. **Check Node.js dispatch logs**: Look for `📡 LIVEKIT DISPATCH: Preparing to dispatch agent...`
+4. **Verify metadata is sent**: Node.js logs should show `📦 METADATA PAYLOAD (sent to Python Agent)`
+5. **Check Python receives metadata**: Look for `📦 METADATA RECEIVED FROM BACKEND` in Python logs
+
+#### Coaching Cards Issues
 
 If coaching cards don't appear:
 
