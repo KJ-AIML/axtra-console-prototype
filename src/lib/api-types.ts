@@ -1,218 +1,193 @@
 /**
- * Common API response types
+ * API Type Definitions
+ * Shared types for API requests and responses
  */
 
-/**
- * Standard paginated response
- */
-export interface PaginatedResponse<T> {
-  data: T[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-    hasNext: boolean;
-    hasPrev: boolean;
-  };
-}
+// ============================================
+// Auth Types
+// ============================================
 
-/**
- * Standard API response wrapper
- */
-export interface ApiResponse<T> {
-  data: T;
-  message?: string;
-  success: boolean;
-}
-
-/**
- * API error response
- */
-export interface ApiErrorResponse {
-  message: string;
-  error?: string;
-  code?: string;
-  details?: Record<string, unknown>;
-}
-
-/**
- * User-related types
- */
 export interface User {
   id: string;
-  name: string;
   email: string;
+  name: string;
   initials: string;
   role: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
-/**
- * Auth-related types
- */
 export interface LoginRequest {
   email: string;
   password: string;
 }
 
-export interface LoginResponse {
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface AuthResponse {
   user: User;
   token: string;
-  refreshToken: string;
-  expiresIn: number;
 }
 
-export interface RefreshTokenRequest {
-  refreshToken: string;
-}
+// ============================================
+// Dashboard Types
+// ============================================
 
-export interface RefreshTokenResponse {
-  token: string;
-  expiresIn: number;
-}
-
-/**
- * Scenario-related types
- */
-export interface Scenario {
+export interface Metric {
   id: string;
-  title: string;
-  description: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  category: string;
-  duration: number;
-  persona: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateScenarioRequest {
-  title: string;
-  description: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  category: string;
-  duration: number;
-  persona: string;
-  tags?: string[];
-}
-
-export interface UpdateScenarioRequest extends Partial<CreateScenarioRequest> {
-  id: string;
-}
-
-/**
- * Simulation-related types
- */
-export interface Simulation {
-  id: string;
-  scenarioId: string;
-  userId: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  score?: number;
-  startedAt?: string;
-  completedAt?: string;
-  feedback?: string;
-}
-
-export interface CreateSimulationRequest {
-  scenarioId: string;
-}
-
-export interface SimulationResponse {
-  id: string;
-  scenarioId: string;
-  status: string;
-  score?: number;
-  feedback?: string;
-}
-
-/**
- * Dashboard metrics types
- */
-export interface DashboardMetrics {
-  avgHandleTime: string;
-  firstCallResolution: number;
-  avgQaScore: number;
-  complianceRate: number;
-  escalationRate: number;
+  label: string;
+  value: number;
+  change: number;
+  trend: 'up' | 'down' | 'neutral';
 }
 
 export interface SkillVelocity {
-  level: number;
-  currentXp: number;
-  maxXp: number;
-  progress: number;
+  id: string;
+  user_id: string;
+  skill_name: string;
+  current_level: number;
+  target_level: number;
+  progress_percentage: number;
 }
 
 export interface QaHighlight {
   id: string;
-  title: string;
-  description: string;
-  type: 'positive' | 'improvement';
-  createdAt: string;
+  user_id: string;
+  type: 'praise' | 'improvement';
+  message: string;
+  date: string;
 }
 
-/**
- * Active Call types
- */
-export interface ActiveCall {
-  id: string;
-  agent: string;
-  customer: string;
-  duration: number;
-  status: 'active' | 'on_hold' | 'wrapping_up';
-  sentiment?: 'positive' | 'neutral' | 'negative';
-  startTime: string;
-}
+// ============================================
+// Scenario Types
+// ============================================
 
-/**
- * Insights types
- */
-export interface Insight {
+export interface Scenario {
   id: string;
   title: string;
-  description: string;
-  category: string;
-  impact: 'high' | 'medium' | 'low';
-  createdAt: string;
-}
-
-/**
- * File upload types
- */
-export interface FileUploadRequest {
-  file: File;
+  description?: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  duration: string;
   type: string;
-  metadata?: Record<string, unknown>;
+  category?: string;
+  persona?: string;
+  rating: number;
+  completions: number;
+  is_recommended: boolean;
+  progress?: 'not_started' | 'in_progress' | 'completed';
+  score?: number;
 }
 
-export interface FileUploadResponse {
+// ============================================
+// Recording Types
+// ============================================
+
+export interface RecordingListItem {
   id: string;
-  filename: string;
-  url: string;
-  size: number;
-  mimetype: string;
-  uploadedAt: string;
+  scenario_title: string;
+  scenario_difficulty: string;
+  scenario_category: string;
+  duration_seconds: number;
+  total_turns: number;
+  final_score?: number;
+  customer_sentiment: string;
+  started_at: string;
+  status: string;
+  has_summary: boolean;
 }
 
-/**
- * Search and filter types
- */
-export interface SearchParams {
-  query?: string;
-  page?: number;
-  pageSize?: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-  filters?: Record<string, unknown>;
+export interface TranscriptEntry {
+  speaker: 'customer' | 'operator';
+  text: string;
+  timestamp: string;
 }
 
-export interface SearchResult<T> {
-  items: T[];
+export interface CoachingCard {
+  title: string;
+  detail: string;
+  action: string;
+  status: 'danger' | 'warning' | 'success' | 'info';
+}
+
+export interface CoachingData {
+  analysis_id: number;
+  cards: CoachingCard[];
+  script: {
+    summary: string;
+    suggestion: string;
+  };
+}
+
+export interface CallSummary {
+  summary: string;
+  key_points: string[];
+  strengths: string[];
+  improvements: string[];
+  customer_satisfaction: number;
+  resolution_status: 'resolved' | 'pending' | 'escalated' | 'unresolved';
+  coaching_effectiveness: number;
+}
+
+export interface RecordingDetail extends RecordingListItem {
+  user_id: string;
+  scenario_id: string;
+  room_name: string;
+  ended_at?: string;
+  transcripts: TranscriptEntry[];
+  coaching: CoachingData[];
+  summary: CallSummary | null;
+  // Recording fields
+  has_recording: boolean;
+  recording_status?: 'none' | 'recording' | 'processing' | 'completed' | 'failed';
+  operator_track_url?: string;
+  agent_track_url?: string;
+  stereo_track_url?: string;
+  audio_url?: string; // Fallback single audio URL
+}
+
+export interface RecordingFilters {
+  scenario_id?: string;
+  difficulty?: string;
+  status?: 'completed' | 'abandoned';
+  date_from?: string;
+  date_to?: string;
+  min_score?: number;
+  max_score?: number;
+  search?: string;
+}
+
+export interface RecordingStats {
+  total_recordings: number;
+  total_duration_seconds: number;
+  average_score: number;
+  by_scenario: { scenario_id: string; title: string; count: number }[];
+  by_difficulty: { difficulty: string; count: number; avg_score: number }[];
+}
+
+export interface PaginatedRecordings {
+  recordings: RecordingListItem[];
   total: number;
-  page: number;
-  pageSize: number;
+}
+
+// ============================================
+// API Response Types
+// ============================================
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+// ============================================
+// LiveKit Types
+// ============================================
+
+export interface LiveKitTokenResponse {
+  token: string;
+  url: string;
+  roomName: string;
 }

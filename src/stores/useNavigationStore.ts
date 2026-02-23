@@ -10,6 +10,8 @@ export const ROUTE_PATHS: Record<string, string> = {
   'active-calls': '/active-calls',
   'recordings': '/recordings',
   'qa-scoring': '/qa-scoring',
+  'qa-reviewed': '/qa-reviewed',
+  'qa-criteria': '/qa-criteria-config',
   'trends': '/insights',
   'kb': '/knowledge-base',
   'offers': '/offers',

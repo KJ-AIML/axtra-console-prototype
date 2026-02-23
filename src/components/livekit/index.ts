@@ -7,3 +7,5 @@ export { LiveKitCallControls } from './LiveKitCallControls';
 export { LiveKitTranscript } from './LiveKitTranscript';
 export { LiveKitConnectionStatus } from './LiveKitConnectionStatus';
 export { LiveKitWelcomeScreen } from './LiveKitWelcomeScreen';
+export { AxtraCopilot } from './AxtraCopilot';
+export { CallSummaryModal } from './CallSummaryModal';

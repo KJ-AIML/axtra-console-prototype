@@ -32,6 +32,7 @@ export interface RequestConfig {
   params?: Record<string, string | number>;
   signal?: AbortSignal;
   timeout?: number;
+  responseType?: 'json' | 'blob' | 'text';
 }
 
 // Auth token storage (can be replaced with proper auth store)
@@ -99,14 +100,30 @@ async function requestInterceptor(
 /**
  * Response interceptor - runs after response is received
  */
-async function responseInterceptor<T>(response: Response): Promise<T> {
+async function responseInterceptor<T>(response: Response, responseType?: 'json' | 'blob' | 'text'): Promise<T> {
   // Handle empty responses (e.g., 204 No Content)
   const contentType = response.headers.get('content-type');
   if (!contentType || response.status === 204) {
     return undefined as T;
   }
 
-  // Parse JSON response
+  // If explicit response type is requested
+  if (responseType === 'blob') {
+    if (!response.ok) {
+      throw new ApiError('Request failed', response.status);
+    }
+    return (await response.blob()) as T;
+  }
+
+  if (responseType === 'text') {
+    const text = await response.text();
+    if (!response.ok) {
+      throw new ApiError(text, response.status);
+    }
+    return text as T;
+  }
+
+  // Parse JSON response (default)
   if (contentType.includes('application/json')) {
     const data = await response.json();
 
@@ -133,7 +150,7 @@ async function responseInterceptor<T>(response: Response): Promise<T> {
     return text as T;
   }
 
-  // Handle other response types
+  // Handle other response types (default to blob for non-JSON)
   if (!response.ok) {
     throw new ApiError('Request failed', response.status);
   }
@@ -165,9 +182,10 @@ function handleRequestError(error: unknown): never {
  */
 async function fetchWithTimeout<T>(
   url: string,
-  config: RequestInit & { timeout?: number }
+  config: RequestInit & { timeout?: number; responseType?: 'json' | 'blob' | 'text' }
 ): Promise<T> {
   const timeout = config.timeout || API_CONFIG.timeout;
+  const { responseType, ...restConfig } = config;
 
   // Create abort controller for timeout
   const controller = new AbortController();
@@ -176,7 +194,7 @@ async function fetchWithTimeout<T>(
   try {
     // Run request interceptor
     const { url: processedUrl, config: processedConfig } = await requestInterceptor(url, {
-      ...config,
+      ...restConfig,
       signal: controller.signal,
     });
 
@@ -184,7 +202,7 @@ async function fetchWithTimeout<T>(
     const response = await fetch(processedUrl, processedConfig);
 
     // Run response interceptor
-    return await responseInterceptor<T>(response);
+    return await responseInterceptor<T>(response, responseType);
   } catch (error) {
     // Handle all errors through the error handler
     handleRequestError(error);
@@ -206,6 +224,7 @@ export const apiClient = {
       headers: config?.headers,
       signal: config?.signal,
       timeout: config?.timeout,
+      responseType: config?.responseType,
     });
   },
 

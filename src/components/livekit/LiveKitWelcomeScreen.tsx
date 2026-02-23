@@ -17,6 +17,8 @@ interface LiveKitWelcomeScreenProps {
   onStartCall: () => void;
   onEnableAudio: () => void;
   className?: string;
+  /** Optional: show "Starting..." vs "Connecting..." */
+  isStarting?: boolean;
 }
 
 export const LiveKitWelcomeScreen = memo<LiveKitWelcomeScreenProps>(
@@ -29,7 +31,8 @@ export const LiveKitWelcomeScreen = memo<LiveKitWelcomeScreenProps>(
     needsAudioPermission,
     onStartCall,
     onEnableAudio,
-    className 
+    className,
+    isStarting,
   }) => {
     const getDifficultyStyle = () => {
       switch (difficulty) {
@@ -110,7 +113,7 @@ export const LiveKitWelcomeScreen = memo<LiveKitWelcomeScreenProps>(
             {isConnecting ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
-                <span>Connecting...</span>
+                <span>{isStarting ? 'Starting simulation...' : 'Connecting...'}</span>
               </>
             ) : (
               <>

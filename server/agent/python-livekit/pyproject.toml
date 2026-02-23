@@ -17,6 +17,9 @@ dependencies = [
     "langchain-openai>=0.3.35",
     "langchain-google-genai>=2.1.12",
     "torch>=2.8.0",
+    "ruff>=0.14.14",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
 ]
 
 [project.optional-dependencies]
@@ -60,12 +63,17 @@ all = [
     "livekit-plugins-azure>=1.0.0",
 ]
 
+[project.scripts]
+summary-api = "api.server:main"
+
 [tool.black]
 line-length = 100
 target-version = ["py39", "py310", "py311"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 

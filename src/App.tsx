@@ -9,16 +9,24 @@ import { ToastContainer } from './components/ui';
 import {
   Login,
   Scenarios,
+  ScenarioBuilder,
   Personas,
+  PersonaBuilder,
   Simulations,
   ActiveSimulation,
   Copilot,
   ActiveCalls,
   Recordings,
-  QAScoring,
+  RecordingDetail,
+  QAReviewQueue,
+  QAReviewDetail,
+  QACriteriaConfig,
+  QAReviewedCalls,
   Insights,
   KnowledgeBase,
   Offers,
+  GeneralPromotionBuilder,
+  PersonalPromotionBuilder,
   Settings,
   DeveloperAPI,
 } from './pages';
@@ -93,15 +101,27 @@ const MainLayout: React.FC<{ className?: string }> = ({ className }) => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/scenarios" element={<Scenarios />} />
+            <Route path="/scenarios/new" element={<ScenarioBuilder />} />
+            <Route path="/scenarios/:scenarioId/edit" element={<ScenarioBuilder />} />
             <Route path="/personas" element={<Personas />} />
+            <Route path="/personas/new" element={<PersonaBuilder />} />
+            <Route path="/personas/:personaId/edit" element={<PersonaBuilder />} />
             <Route path="/simulations" element={<Simulations />} />
             <Route path="/copilot" element={<Copilot />} />
             <Route path="/active-calls" element={<ActiveCalls />} />
             <Route path="/recordings" element={<Recordings />} />
-            <Route path="/qa-scoring" element={<QAScoring />} />
+            <Route path="/recordings/:id" element={<RecordingDetail />} />
+            <Route path="/qa-scoring" element={<QAReviewQueue />} />
+            <Route path="/qa-reviewed" element={<QAReviewedCalls />} />
+            <Route path="/qa-review/:callId" element={<QAReviewDetail />} />
+            <Route path="/qa-criteria-config" element={<QACriteriaConfig />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/knowledge-base" element={<KnowledgeBase />} />
             <Route path="/offers" element={<Offers />} />
+            <Route path="/offers/general/new" element={<GeneralPromotionBuilder />} />
+            <Route path="/offers/general/:promotionId/edit" element={<GeneralPromotionBuilder />} />
+            <Route path="/offers/personal/new" element={<PersonalPromotionBuilder />} />
+            <Route path="/offers/personal/:promotionId/edit" element={<PersonalPromotionBuilder />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/developer-api" element={<DeveloperAPI />} />
             <Route path="*" element={<Dashboard />} />

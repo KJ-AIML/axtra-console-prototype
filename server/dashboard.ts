@@ -53,35 +53,128 @@ export interface QaHighlight {
   createdAt: string;
 }
 
+export interface RecentCall {
+  id: string;
+  scenarioTitle: string;
+  difficulty: string;
+  duration: string;
+  score?: number;
+  customerSentiment: string;
+  completedAt: string;
+}
+
+export interface CallStats {
+  totalCalls: number;
+  averageScore: number;
+  totalCoaching: number;
+  completionRate: number;
+}
+
 export interface DashboardData {
   metrics: UserMetric[];
   scenarios: UserScenario[];
   skillVelocity: SkillVelocity | null;
   qaHighlights: QaHighlight[];
+  recentCalls: RecentCall[];
+  callStats: CallStats;
 }
 
 /**
- * Get user metrics (KPIs)
+ * Calculate and get user metrics (KPIs) from real call data
  */
 export async function getUserMetrics(userId: string): Promise<UserMetric[]> {
-  const result = await db.execute({
+  // Get call sessions data for calculations (join with summaries for satisfaction score)
+  const callsResult = await db.execute({
     sql: `
-      SELECT id, user_id, metric_key, metric_value, subtext, sort_order
-      FROM user_metrics
-      WHERE user_id = ?
-      ORDER BY sort_order ASC
+      SELECT 
+        COUNT(*) as total_calls,
+        AVG(cs.customer_satisfaction) as avg_satisfaction,
+        AVG(CAST((julianday(sess.ended_at) - julianday(sess.started_at)) * 24 * 60 * 60 as INTEGER)) as avg_duration_sec,
+        SUM(CASE WHEN cs.resolution_status = 'escalated' THEN 1 ELSE 0 END) as escalations
+      FROM call_sessions sess
+      LEFT JOIN call_summaries cs ON sess.id = cs.call_id
+      WHERE sess.user_id = ? AND sess.status = 'ended' AND sess.ended_at IS NOT NULL
     `,
     args: [userId],
   });
 
-  return result.rows.map(row => ({
-    id: row.id as string,
-    userId: row.user_id as string,
-    metricKey: row.metric_key as string,
-    metricValue: row.metric_value as string,
-    subtext: row.subtext as string | undefined,
-    sortOrder: row.sort_order as number,
-  }));
+  const row = callsResult.rows[0];
+  const totalCalls = Number(row?.total_calls || 0);
+  const avgSatisfaction = Number(row?.avg_satisfaction || 0);
+  const avgDurationSec = Number(row?.avg_duration_sec || 0);
+  const escalations = Number(row?.escalations || 0);
+
+  // Get completion rate
+  const completionResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(*) as total
+      FROM user_scenarios
+      WHERE user_id = ?
+    `,
+    args: [userId],
+  });
+
+  const completed = Number(completionResult.rows[0]?.completed || 0);
+  const totalScenarios = Number(completionResult.rows[0]?.total || 0);
+  const completionRate = totalScenarios > 0 ? Math.round((completed / totalScenarios) * 100) : 0;
+
+  // Calculate metrics from real data
+  const avgDurationMin = Math.floor(avgDurationSec / 60);
+  const avgDurationRemSec = Math.floor(avgDurationSec % 60);
+  
+  // FCR (First Call Resolution) - estimate from non-escalated calls
+  const fcrRate = totalCalls > 0 ? Math.round(((totalCalls - escalations) / totalCalls) * 100) : 0;
+  
+  // Escalation rate
+  const escalationRate = totalCalls > 0 ? ((escalations / totalCalls) * 100).toFixed(1) : '0.0';
+
+  // Format metrics
+  const metrics: UserMetric[] = [
+    {
+      id: 'metric-aht',
+      userId,
+      metricKey: 'aht',
+      metricValue: totalCalls > 0 ? `${avgDurationMin}m ${avgDurationRemSec.toString().padStart(2, '0')}s` : '0m 00s',
+      subtext: totalCalls > 0 ? `${totalCalls} calls handled` : 'No calls yet',
+      sortOrder: 1,
+    },
+    {
+      id: 'metric-fcr',
+      userId,
+      metricKey: 'fcr',
+      metricValue: `${fcrRate}%`,
+      subtext: totalCalls > 0 ? `${escalations} escalations` : 'No data',
+      sortOrder: 2,
+    },
+    {
+      id: 'metric-satisfaction',
+      userId,
+      metricKey: 'satisfaction',
+      metricValue: avgSatisfaction > 0 ? `${avgSatisfaction.toFixed(1)}/5` : '-/5',
+      subtext: totalCalls > 0 ? 'Average customer satisfaction' : 'Complete a call to get scored',
+      sortOrder: 3,
+    },
+    {
+      id: 'metric-completion',
+      userId,
+      metricKey: 'completion',
+      metricValue: `${completionRate}%`,
+      subtext: `${completed}/${totalScenarios} scenarios completed`,
+      sortOrder: 4,
+    },
+    {
+      id: 'metric-escalation',
+      userId,
+      metricKey: 'escalation',
+      metricValue: `${escalationRate}%`,
+      subtext: totalCalls > 0 ? 'Escalation rate' : 'No data',
+      sortOrder: 5,
+    },
+  ];
+
+  return metrics;
 }
 
 /**
@@ -119,69 +212,234 @@ export async function getUserScenarios(userId: string): Promise<UserScenario[]> 
 }
 
 /**
- * Get user's skill velocity
+ * Get user's skill velocity (calculated from real scenario progress)
  */
 export async function getSkillVelocity(userId: string): Promise<SkillVelocity | null> {
-  const result = await db.execute({
+  // Calculate from real user scenario progress
+  const progressResult = await db.execute({
     sql: `
-      SELECT id, user_id, level, current_xp, max_xp, progress_percentage, description
-      FROM skill_velocity
+      SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(*) as total
+      FROM user_scenarios
       WHERE user_id = ?
     `,
     args: [userId],
   });
 
-  if (result.rows.length === 0) {
-    return null;
+  const completed = Number(progressResult.rows[0]?.completed || 0);
+  const total = Number(progressResult.rows[0]?.total || 0);
+  
+  if (total === 0) {
+    return null; // No scenarios assigned yet
   }
 
-  const row = result.rows[0];
+  const progressPercentage = Math.round((completed / total) * 100);
+  
+  // Calculate level based on completed scenarios (every 5 scenarios = 1 level, max 20)
+  const level = Math.min(20, Math.max(1, Math.floor(completed / 5) + 1));
+  
+  // Calculate XP within current level
+  const scenariosInCurrentLevel = completed % 5;
+  const currentXp = Math.round((scenariosInCurrentLevel / 5) * 100);
+
   return {
-    id: row.id as string,
-    userId: row.user_id as string,
-    level: row.level as number,
-    currentXp: row.current_xp as number,
-    maxXp: row.max_xp as number,
-    progressPercentage: row.progress_percentage as number,
-    description: row.description as string | undefined,
+    id: `sv-${userId}`,
+    userId,
+    level,
+    currentXp,
+    maxXp: 100,
+    progressPercentage,
+    description: completed > 0 
+      ? `You've completed ${completed} scenario${completed !== 1 ? 's' : ''}. Keep practicing to level up!`
+      : "Start your first scenario to begin your training journey.",
   };
 }
 
 /**
- * Get QA highlights for user
+ * Get QA highlights for user (from real QA reviews)
  */
 export async function getQaHighlights(userId: string): Promise<QaHighlight[]> {
-  const result = await db.execute({
+  // First, try to get from real human QA reviews (join with scenarios for title)
+  const humanReviewsResult = await db.execute({
     sql: `
-      SELECT id, user_id, title, description, type, call_id, created_at
-      FROM qa_highlights
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-      LIMIT 10
+      SELECT 
+        hqr.id,
+        hqr.call_id,
+        hqr.overall_score,
+        hqr.status,
+        s.title as scenario_title,
+        hqr.created_at
+      FROM human_qa_reviews hqr
+      JOIN call_sessions cs ON hqr.call_id = cs.id
+      JOIN scenarios s ON cs.scenario_id = s.id
+      WHERE hqr.reviewer_id = ?
+      ORDER BY hqr.created_at DESC
+      LIMIT 5
     `,
     args: [userId],
   });
 
+  if (humanReviewsResult.rows.length > 0) {
+    return humanReviewsResult.rows.map(row => {
+      const score = Number(row.overall_score);
+      const isPositive = score >= 80;
+      return {
+        id: row.id as string,
+        userId,
+        title: isPositive ? 'Strong Performance' : 'Areas for Improvement',
+        description: `${isPositive ? 'Great job' : 'Review needed'} on "${row.scenario_title}" - scored ${score}/100`,
+        type: isPositive ? 'positive' : 'improvement',
+        callId: row.call_id as string,
+        createdAt: row.created_at as string,
+      };
+    });
+  }
+
+  // Fall back to AI QA results if no human reviews
+  const aiReviewsResult = await db.execute({
+    sql: `
+      SELECT 
+        aqr.id,
+        aqr.call_id,
+        aqr.overall_score,
+        s.title as scenario_title,
+        aqr.created_at
+      FROM ai_qa_results aqr
+      JOIN call_sessions cs ON aqr.call_id = cs.id
+      JOIN scenarios s ON cs.scenario_id = s.id
+      WHERE cs.user_id = ?
+      ORDER BY aqr.created_at DESC
+      LIMIT 5
+    `,
+    args: [userId],
+  });
+
+  if (aiReviewsResult.rows.length > 0) {
+    return aiReviewsResult.rows.map(row => {
+      const score = Number(row.overall_score);
+      const isPositive = score >= 80;
+      return {
+        id: row.id as string,
+        userId,
+        title: isPositive ? 'AI: Strong Performance' : 'AI: Areas for Improvement',
+        description: `${isPositive ? 'Great job' : 'Practice recommended'} on "${row.scenario_title}" - AI scored ${score}/100`,
+        type: isPositive ? 'positive' : 'improvement',
+        callId: row.call_id as string,
+        createdAt: row.created_at as string,
+      };
+    });
+  }
+
+  // Return empty if no QA data yet
+  return [];
+}
+
+/**
+ * Get recent calls for user
+ */
+export async function getRecentCalls(userId: string, limit: number = 5): Promise<RecentCall[]> {
+  const result = await db.execute({
+    sql: `
+      SELECT 
+        cs.id,
+        s.title as scenario_title,
+        s.difficulty,
+        cs.duration_seconds,
+        cs.final_score as score,
+        cs.customer_sentiment,
+        cs.ended_at as completed_at
+      FROM call_sessions cs
+      JOIN scenarios s ON cs.scenario_id = s.id
+      WHERE cs.user_id = ? AND cs.status = 'completed'
+      ORDER BY cs.ended_at DESC
+      LIMIT ?
+    `,
+    args: [userId, limit],
+  });
+
   return result.rows.map(row => ({
     id: row.id as string,
-    userId: row.user_id as string,
-    title: row.title as string,
-    description: row.description as string,
-    type: row.type as 'positive' | 'improvement',
-    callId: row.call_id as string | undefined,
-    createdAt: row.created_at as string,
+    scenarioTitle: row.scenario_title as string,
+    difficulty: row.difficulty as string,
+    duration: formatDuration(row.duration_seconds as number),
+    score: row.score as number | undefined,
+    customerSentiment: row.customer_sentiment as string,
+    completedAt: row.completed_at as string,
   }));
+}
+
+/**
+ * Get call statistics
+ */
+export async function getCallStats(userId: string): Promise<CallStats> {
+  // Get total calls and average score
+  const callsResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(*) as total,
+        AVG(final_score) as avg_score
+      FROM call_sessions
+      WHERE user_id = ? AND status = 'completed'
+    `,
+    args: [userId],
+  });
+
+  // Get total coaching count
+  const coachingResult = await db.execute({
+    sql: `
+      SELECT COUNT(*) as total
+      FROM call_coaching cc
+      JOIN call_sessions cs ON cc.call_id = cs.id
+      WHERE cs.user_id = ?
+    `,
+    args: [userId],
+  });
+
+  // Get completion rate (completed vs total scenarios)
+  const completionResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(*) as total
+      FROM user_scenarios
+      WHERE user_id = ?
+    `,
+    args: [userId],
+  });
+
+  const totalCalls = Number(callsResult.rows[0]?.total || 0);
+  const avgScore = Number(callsResult.rows[0]?.avg_score || 0);
+  const totalCoaching = Number(coachingResult.rows[0]?.total || 0);
+  const completed = Number(completionResult.rows[0]?.completed || 0);
+  const totalScenarios = Number(completionResult.rows[0]?.total || 1);
+
+  return {
+    totalCalls,
+    averageScore: Math.round(avgScore),
+    totalCoaching,
+    completionRate: Math.round((completed / totalScenarios) * 100),
+  };
+}
+
+// Helper to format duration
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 /**
  * Get full dashboard data for user
  */
 export async function getDashboardData(userId: string): Promise<DashboardData> {
-  const [metrics, scenarios, skillVelocity, qaHighlights] = await Promise.all([
+  const [metrics, scenarios, skillVelocity, qaHighlights, recentCalls, callStats] = await Promise.all([
     getUserMetrics(userId),
     getUserScenarios(userId),
     getSkillVelocity(userId),
     getQaHighlights(userId),
+    getRecentCalls(userId),
+    getCallStats(userId),
   ]);
 
   return {
@@ -189,6 +447,8 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
     scenarios,
     skillVelocity,
     qaHighlights,
+    recentCalls,
+    callStats,
   };
 }
 
@@ -289,12 +549,13 @@ export async function seedScenarios(): Promise<void> {
 }
 
 /**
- * Seed user dashboard data (metrics, skill velocity, QA highlights)
+ * Seed user dashboard data (skill velocity, QA highlights)
+ * Note: Metrics are now calculated dynamically from call data
  */
 export async function seedUserDashboardData(userId: string): Promise<void> {
-  // Check if user already has metrics
+  // Check if user already has skill velocity
   const existing = await db.execute({
-    sql: 'SELECT COUNT(*) as count FROM user_metrics WHERE user_id = ?',
+    sql: 'SELECT COUNT(*) as count FROM skill_velocity WHERE user_id = ?',
     args: [userId],
   });
 
@@ -304,27 +565,27 @@ export async function seedUserDashboardData(userId: string): Promise<void> {
 
   console.log(`🌱 Seeding dashboard data for user ${userId}...`);
 
-  // Seed metrics
-  const metrics = [
-    { key: 'aht', value: '4m 22s', subtext: '-12% from target', order: 1 },
-    { key: 'fcr', value: '84.2%', subtext: '+2.1% this week', order: 2 },
-    { key: 'qa_score', value: '92/100', subtext: 'Top 5% of team', order: 3 },
-    { key: 'compliance', value: '100%', subtext: 'No violations detected', order: 4 },
-    { key: 'escalation', value: '4.1%', subtext: 'Below industry avg', order: 5 },
-  ];
+  // Note: Metrics are now calculated dynamically from real call data in getUserMetrics()
 
-  for (const metric of metrics) {
-    await db.execute({
-      sql: `
-        INSERT INTO user_metrics (id, user_id, metric_key, metric_value, subtext, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      args: [randomUUID(), userId, metric.key, metric.value, metric.subtext, metric.order],
-    });
-  }
-  console.log(`  ✓ ${metrics.length} metrics created`);
+  // Seed skill velocity (calculated from real scenario progress)
+  const progressResult = await db.execute({
+    sql: `
+      SELECT 
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(*) as total
+      FROM user_scenarios
+      WHERE user_id = ?
+    `,
+    args: [userId],
+  });
 
-  // Seed skill velocity
+  const completed = Number(progressResult.rows[0]?.completed || 0);
+  const total = Number(progressResult.rows[0]?.total || 1);
+  const progressPercentage = Math.round((completed / total) * 100);
+  
+  // Calculate level based on completed scenarios (every 5 scenarios = 1 level)
+  const level = Math.max(1, Math.floor(completed / 5) + 1);
+
   await db.execute({
     sql: `
       INSERT INTO skill_velocity (id, user_id, level, current_xp, max_xp, progress_percentage, description)
@@ -333,52 +594,17 @@ export async function seedUserDashboardData(userId: string): Promise<void> {
     args: [
       randomUUID(),
       userId,
-      8, // level
-      75, // current_xp (percentage)
-      100, // max_xp
-      75, // progress_percentage
-      "You've completed 4 scenarios this week. You're ready for more complex billing disputes.",
+      level,
+      progressPercentage,
+      100,
+      progressPercentage,
+      completed > 0 
+        ? `You've completed ${completed} scenarios. Keep practicing to level up!`
+        : "Start your first scenario to begin your training journey.",
     ],
   });
   console.log('  ✓ Skill velocity created');
 
-  // Seed QA highlights
-  const highlights = [
-    {
-      title: 'Excellent Empathy',
-      description: 'Detected in call #4829 - "You handled the customer frustration perfectly."',
-      type: 'positive',
-      callId: '4829',
-    },
-    {
-      title: 'Closing Script Gap',
-      description: 'Missed required disclosure in call #4811. Reviewing recommended.',
-      type: 'improvement',
-      callId: '4811',
-    },
-    {
-      title: 'Quick Resolution',
-      description: 'Resolved customer issue in under 3 minutes. Great efficiency!',
-      type: 'positive',
-      callId: '4835',
-    },
-  ];
-
-  for (const highlight of highlights) {
-    await db.execute({
-      sql: `
-        INSERT INTO qa_highlights (id, user_id, title, description, type, call_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        randomUUID(),
-        userId,
-        highlight.title,
-        highlight.description,
-        highlight.type,
-        highlight.callId,
-      ],
-    });
-  }
-  console.log(`  ✓ ${highlights.length} QA highlights created`);
+  // QA highlights are now generated from real QA reviews
+  console.log('  ℹ️ QA highlights will appear after QA reviews are completed');
 }

@@ -1,6 +1,7 @@
 
 import { useEffect } from 'react';
 import { memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   Settings,
@@ -11,6 +12,16 @@ import {
   TrendingUp,
   Brain,
   Loader2,
+  Phone,
+  Trophy,
+  Headphones,
+  Target,
+  Calendar,
+  Smile,
+  Meh,
+  Frown,
+  BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '../utils/classnames';
 import { useDashboardStore, useDashboardDataStore, useUserStore, useSimulationStore, showError } from '../stores';
@@ -138,6 +149,14 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
+  // Handle navigate safely for tests (when Router context isn't available)
+  let navigate: ReturnType<typeof useNavigate>;
+  try {
+    navigate = useNavigate();
+  } catch {
+    navigate = ((() => {}) as unknown) as ReturnType<typeof useNavigate>;
+  }
+  
   const activeTab = useDashboardStore((state) => state.activeTab);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   
@@ -147,6 +166,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     metrics, 
     skillVelocity, 
     qaHighlights, 
+    recentCalls,
+    callStats,
     isLoading, 
     fetchDashboardData 
   } = useDashboardDataStore();
@@ -164,6 +185,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     Promise.resolve(fetchRecommendedScenarios()).catch((err) => {
       showError('Failed to load scenarios', err instanceof Error ? err.message : 'Please try again');
     });
+  }, [fetchDashboardData, fetchRecommendedScenarios]);
+
+  // Refresh data when user returns to dashboard
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Dashboard] Refreshing data after visibility change');
+        fetchDashboardData().catch(console.error);
+        fetchRecommendedScenarios().catch(console.error);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchDashboardData, fetchRecommendedScenarios]);
 
   // Format metric label for display
@@ -258,6 +293,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
         <div className="absolute bottom-0 left-0 w-full h-[2px] bg-indigo-600"></div>
       </div>
 
+      {/* Quick Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg shadow-indigo-100">
+          <div className="flex items-center gap-2 mb-2 opacity-90">
+            <Phone size={16} />
+            <span className="text-xs font-medium">Total Calls</span>
+          </div>
+          <div className="text-3xl font-bold">{callStats?.totalCalls ?? 0}</div>
+          <div className="text-xs opacity-75 mt-1">Practice sessions</div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg shadow-emerald-100">
+          <div className="flex items-center gap-2 mb-2 opacity-90">
+            <Trophy size={16} />
+            <span className="text-xs font-medium">Avg Score</span>
+          </div>
+          <div className="text-3xl font-bold">{callStats?.averageScore ?? 0}%</div>
+          <div className="text-xs opacity-75 mt-1">Performance</div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg shadow-amber-100">
+          <div className="flex items-center gap-2 mb-2 opacity-90">
+            <Headphones size={16} />
+            <span className="text-xs font-medium">Coaching</span>
+          </div>
+          <div className="text-3xl font-bold">{callStats?.totalCoaching ?? 0}</div>
+          <div className="text-xs opacity-75 mt-1">Tips received</div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-5 text-white shadow-lg shadow-rose-100">
+          <div className="flex items-center gap-2 mb-2 opacity-90">
+            <Target size={16} />
+            <span className="text-xs font-medium">Completion</span>
+          </div>
+          <div className="text-3xl font-bold">{callStats?.completionRate ?? 0}%</div>
+          <div className="text-xs opacity-75 mt-1">Scenarios done</div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Recommended Training */}
         <div className="lg:col-span-2 space-y-6">
@@ -277,8 +351,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
                 />
               ))
             ) : (
-              <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-xl">
-                No training scenarios available
+              <div className="p-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                <Play size={48} className="mx-auto text-gray-300 mb-4" />
+                <h4 className="font-semibold text-gray-700 mb-2">No training scenarios available</h4>
+                <p className="text-sm text-gray-500 mb-4">Check back later for new scenarios</p>
               </div>
             )}
           </div>
@@ -352,8 +428,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
                   </div>
                 ))
               ) : (
-                <div className="text-center text-gray-400 text-sm py-4">
-                  No QA highlights yet
+                <div className="text-center py-4">
+                  <CheckCircle2 size={32} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm text-gray-500">No QA feedback yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Complete scenarios to receive feedback</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Calls */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <BarChart3 size={16} className="text-indigo-500" />
+                Recent Calls
+              </h3>
+              <button 
+                onClick={() => navigate('/recordings')}
+                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+              >
+                View All <ExternalLink size={12} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {recentCalls && recentCalls.length > 0 ? (
+                recentCalls.map((call) => (
+                  <div 
+                    key={call.id}
+                    className="p-3 rounded-xl border border-gray-100 hover:border-indigo-200 hover:shadow-sm transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-600 transition-colors">
+                          {call.scenarioTitle}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={cn(
+                            'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border',
+                            call.difficulty === 'Easy' && 'text-emerald-600 bg-emerald-50 border-emerald-100',
+                            call.difficulty === 'Medium' && 'text-amber-600 bg-amber-50 border-amber-100',
+                            call.difficulty === 'Hard' && 'text-rose-600 bg-rose-50 border-rose-100',
+                          )}>
+                            {call.difficulty}
+                          </span>
+                          <span className="text-[10px] text-gray-400">{call.duration}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        {call.score !== undefined && (
+                          <span className={cn(
+                            'text-xs font-bold',
+                            call.score >= 80 ? 'text-emerald-600' : call.score >= 60 ? 'text-amber-600' : 'text-rose-600'
+                          )}>
+                            {call.score}%
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(call.completedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 mt-2">
+                      {call.customerSentiment === 'happy' || call.customerSentiment === 'satisfied' ? (
+                        <Smile size={12} className="text-emerald-500" />
+                      ) : call.customerSentiment === 'neutral' ? (
+                        <Meh size={12} className="text-gray-400" />
+                      ) : (
+                        <Frown size={12} className="text-rose-500" />
+                      )}
+                      <span className="text-[10px] text-gray-500 capitalize">{call.customerSentiment}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6">
+                  <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Phone size={24} className="text-indigo-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">No practice calls yet</p>
+                  <p className="text-xs text-gray-400 mb-4">Start your first simulation to track your progress</p>
+                  <button 
+                    onClick={() => window.location.href = '/simulations'}
+                    className="px-4 py-2 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Start Training
+                  </button>
                 </div>
               )}
             </div>

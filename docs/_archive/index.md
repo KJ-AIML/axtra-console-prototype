@@ -9,6 +9,7 @@ Welcome to the Axtra Console documentation. This is an AI-powered call center co
 | Document | Description |
 |----------|-------------|
 | [Architecture](./architecture.md) | System architecture, data flow |
+| [LiveKit Integration](./livekit.md) | Voice AI setup, AXTRA Copilot details |
 | [Design System](./design_system.md) | Design philosophy, visual language |
 | [Style Guide](./style-guide.md) | Colors, components, spacing |
 | [Contributing](./contributing.md) | Coding standards, guidelines |
@@ -50,8 +51,9 @@ npm run build
 | **Authentication** | JWT-based login/registration with Turso |
 | **Dashboard** | Real-time KPIs, skill velocity, QA highlights |
 | **Training** | 8 AI-powered simulation scenarios |
-| **Voice AI** | Live voice calls with AI agents via LiveKit |
-| **Call Interface** | 3-panel view with AI coaching |
+| **Voice AI** | Live voice calls with AI agents via LiveKit + Google Gemini |
+| **AXTRA Copilot** | Real-time AI coaching with 3-card analysis via LangGraph |
+| **Call Interface** | 3-panel view with customer data, live call, and coaching |
 | **Progress Tracking** | Database-backed user progress |
 
 ---
@@ -59,14 +61,14 @@ npm run build
 ## 🏗️ Tech Stack
 
 ```
-Frontend          Backend           Database        Voice/Video
-─────────         ───────           ────────        ───────────
-React 19          Node.js HTTP      Turso (libsql)  LiveKit (WebRTC)
-TypeScript 5.8    API Server        Serverless      GPT-4o Realtime
-Vite 6            bcryptjs          SQLite          
-Tailwind v4       @libsql/client                    
-React Router v7                                     
-Zustand v5                                          
+Frontend          Backend           Database        Voice/Video         AI Coaching
+─────────         ───────           ────────        ───────────         ───────────
+React 19          Node.js HTTP      Turso (libsql)  LiveKit (WebRTC)    LangGraph
+TypeScript 5.8    API Server        Serverless      Google Gemini       LangChain
+Vite 6            bcryptjs          SQLite          Python Agents       Parallel LLM
+Tailwind v4       @libsql/client                                    
+React Router v7                                                         
+Zustand v5                                                              
 Vitest
 ```
 
@@ -173,17 +175,44 @@ Practice with AI-powered scenarios:
 ### Call Interface (3 Panels)
 
 ```
-┌──────────────┬──────────────────────┬──────────────┐
-│  Customer    │   Call Center        │ AI Copilot   │
-│  Data        │   (Transcription)    │ (Guidance)   │
-│              │                      │              │
-│ • Profile    │ Customer: "I'm..."   │ • Emotion    │
-│ • Contract   │                      │   Monitor    │
-│ • History    │ Operator: "I..."     │              │
-│              │                      │ • Suggestions│
-│              │ [Mute][Pause][End]   │ • Scripts    │
-└──────────────┴──────────────────────┴──────────────┘
+┌──────────────┬──────────────────────┬───────────────────────────────────────────┐
+│  Customer    │   Live Call          │     AXTRA Copilot                         │
+│  Data        │   (Voice + Transcript)│     (Real-time AI Coaching)              │
+│              │                      │                                           │
+│ • Profile    │ ┌──────────────────┐ │  ┌─────────┐ ┌─────────┐ ┌─────────┐     │
+│ • Contract   │ │  Customer        │ │  │ 💝      │ │ ⚖️      │ │ 🎯      │     │
+│ • History    │ │  "I'm angry..."  │ │  │ Emotion │ │Leverage │ │Strategy │     │
+│              │ └──────────────────┘ │  └────┬────┘ └────┬────┘ └────┬────┘     │
+│ • Tickets    │ ┌──────────────────┐ │       │         │         │            │
+│ • Recent     │ │  Agent           │ │  ┌────▼─────────▼─────────▼────┐        │
+│   Activity   │ │  "I understand"  │ │  │  📝 Suggested Script         │        │
+│              │ └──────────────────┘ │  │  "Let me help..." [Copy]     │        │
+│              │ [🎤][⏸️][🔴 End]      │  └─────────────────────────────┘        │
+└──────────────┴──────────────────────┴───────────────────────────────────────────┘
 ```
+
+### AXTRA Copilot System
+
+Real-time AI coaching during voice calls:
+
+**Trigger Conditions:**
+- After 3 conversation turns (initial analysis)
+- Every 3 new turns after first analysis
+- 300+ characters accumulated
+- 30+ seconds since last analysis
+
+**3-Card Analysis:**
+| Card | Focus | Description |
+|------|-------|-------------|
+| **1** | Emotion | Customer emotional state & empathy tips |
+| **2** | Leverage | Negotiation position & deal dynamics |
+| **3** | Strategy | Recommended approach & next steps |
+
+**Technology Stack:**
+- Python 3.13 + LiveKit Agents 1.4.1
+- Google Gemini Realtime API (voice)
+- LangGraph (parallel card analysis)
+- LiveKit Data Channel (low-latency updates)
 
 ---
 
@@ -236,14 +265,25 @@ npm run test:coverage
 | GET | `/api/simulations/stats` | User stats |
 | GET | `/api/simulations/recommended` | Recommended |
 
+### Call Session Routes
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/calls` | Create call session |
+| POST | `/api/calls/complete` | End call & save data |
+| GET | `/api/calls/:id` | Get call details |
+| GET | `/api/calls/history` | Get call history |
+
 ---
 
 ## 📚 More Documentation
 
 - **Architecture** → [architecture.md](./architecture.md)
+- **LiveKit Integration** → [livekit.md](./livekit.md)
 - **Design System** → [design_system.md](./design_system.md)
 - **Style Guide** → [style-guide.md](./style-guide.md)
 - **Contributing** → [contributing.md](./contributing.md)
+- **Roadmap** → [roadmap.md](./roadmap.md)
+- **Improvement Analysis** → [improvements.md](./improvements.md)
 - **Agent Guide** → [../AGENTS.md](../AGENTS.md)
 
 ---
